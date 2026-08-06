@@ -10,7 +10,7 @@ You do not open a new app. You do not learn a new interface. You message Cerebro
 
 **walk out of your prison, work anywhere**
 
-![Work anywhere](assets/work-anywhere.jpg)
+![Contact](assets/contact.jpg)
 
 **because the only time one should be enclosed in a box, is when they are dead**
 
