@@ -10,8 +10,6 @@ You do not open a new app. You do not learn a new interface. You message Cerebro
 
 **walk out of your prison, work anywhere**
 
-![Contact](assets/contact.jpg)
-
 **because the only time one should be enclosed in a box, is when they are dead**
 
 ---
@@ -21,6 +19,8 @@ You do not open a new app. You do not learn a new interface. You message Cerebro
 Cerebro sits between your people and your systems. It verifies who is talking, works out what they want, and then does it: books the meeting, chases the person who has not replied, remembers what was decided, and fires the deploy.
 
 **Multichannel by default.** One agent, five surfaces. WhatsApp, Telegram, Discord, Slack, and Email all reach the same brain, share the same memory, and speak with the same voice. Your ops lead lives in Slack, your field team lives on WhatsApp, and the client only ever replies to Email. Cerebro does not care.
+
+![Anywhere](assets/anywhere.jpg)
 
 **Verified identity, always.** Nothing runs for a stranger. Every sender is resolved to a real employee through an OTP handshake before a single command executes. A verified sender gets a short lived session, and that session is what carries authority, not the phone number or the chat handle.
 
