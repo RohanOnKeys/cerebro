@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 from cerebro.db.models import Principal, Org, ChannelBinding, Population
 
@@ -16,7 +16,7 @@ def enroll_unknown_sender(
         id=principal_id,
         org_id=org_id,
         population=Population.CLIENT,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
     session.add(principal)
     session.flush()
@@ -28,7 +28,7 @@ def enroll_unknown_sender(
         channel_id=channel_id,
         conversation_id=conversation_id,
         verified="pending",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
     session.add(binding)
     session.commit()

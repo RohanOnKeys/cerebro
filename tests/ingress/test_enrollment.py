@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -23,7 +23,7 @@ def db_session():
 @pytest.fixture
 def test_org(db_session):
     """Create a test organization."""
-    org = Org(id="org_1", name="Test Org", created_at=datetime.utcnow())
+    org = Org(id="org_1", name="Test Org", created_at=datetime.now(UTC))
     db_session.add(org)
     db_session.commit()
     return org

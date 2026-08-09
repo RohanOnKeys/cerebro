@@ -35,7 +35,7 @@ def touch_binding(
     if binding:
         return binding
 
-    from datetime import datetime
+    from datetime import UTC, datetime
     import uuid
 
     binding = ChannelBinding(
@@ -44,7 +44,7 @@ def touch_binding(
         channel=channel,
         channel_id=channel_id,
         verified="pending",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
     session.add(binding)
     session.commit()
