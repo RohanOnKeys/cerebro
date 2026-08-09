@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -23,7 +23,7 @@ def db_session():
 @pytest.fixture
 def test_org_and_principal(db_session):
     """Create a test org and principal."""
-    org = Org(id="org_1", name="Test Org", created_at=datetime.utcnow())
+    org = Org(id="org_1", name="Test Org", created_at=datetime.now(UTC))
     db_session.add(org)
     db_session.commit()
 
@@ -32,7 +32,7 @@ def test_org_and_principal(db_session):
         org_id="org_1",
         population=Population.DEV,
         email="dev@test.com",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
     db_session.add(principal)
     db_session.commit()
@@ -50,7 +50,7 @@ def test_resolve_principal_hit(db_session, test_org_and_principal):
         channel="telegram",
         channel_id="123456",
         verified="verified",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
     db_session.add(binding)
     db_session.commit()
@@ -74,7 +74,7 @@ def test_resolve_principal_miss_unverified(db_session, test_org_and_principal):
         channel="slack",
         channel_id="U123456",
         verified="pending",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
     db_session.add(binding)
     db_session.commit()

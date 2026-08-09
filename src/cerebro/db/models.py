@@ -1,10 +1,9 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 
 from sqlalchemy import Column, DateTime, ForeignKey, Index, String
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -22,7 +21,7 @@ class Org(Base):
 
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     principals = relationship("Principal", back_populates="org")
 
@@ -34,7 +33,7 @@ class Principal(Base):
     org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
     population = Column(SQLEnum(Population), nullable=False)
     email = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     org = relationship("Org", back_populates="principals")
     bindings = relationship("ChannelBinding", back_populates="principal")
@@ -54,7 +53,7 @@ class ChannelBinding(Base):
     channel_id = Column(String, nullable=False)  # user's phone, email, slack id, etc
     conversation_id = Column(String)  # enrollment conversation id
     verified = Column(String, default="pending")  # pending, verified
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     principal = relationship("Principal", back_populates="bindings")
 
