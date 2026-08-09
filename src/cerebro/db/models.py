@@ -29,6 +29,17 @@ class GapChaseStatus(str, Enum):
     EXHAUSTED = "exhausted"
 
 
+class NudgeKind(str, Enum):
+    GAP_ASK = "gap_ask"
+    GAP_ESCALATE = "gap_escalate"
+
+
+class NudgeStatus(str, Enum):
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+
+
 class Org(Base):
     __tablename__ = "orgs"
 
@@ -128,8 +139,34 @@ class GapChase(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     order = relationship("Order", back_populates="gap_chases")
+    nudges = relationship("Nudge", back_populates="gap_chase")
 
     __table_args__ = (
         Index("ix_gap_chases_order_id", "order_id"),
         Index("ix_gap_chases_status", "status"),
+    )
+
+
+class Nudge(Base):
+    __tablename__ = "nudges"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    principal_id = Column(String, ForeignKey("principals.id"), nullable=False)
+    order_id = Column(String, ForeignKey("orders.id"))
+    gap_chase_id = Column(String, ForeignKey("gap_chases.id"))
+    kind = Column(String, nullable=False)
+    body = Column(String, nullable=False)
+    status = Column(String, nullable=False, default=NudgeStatus.PENDING.value)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    sent_at = Column(DateTime)
+
+    gap_chase = relationship("GapChase", back_populates="nudges")
+
+    __table_args__ = (
+        Index("ix_nudges_org_id", "org_id"),
+        Index("ix_nudges_principal_id", "principal_id"),
+        Index("ix_nudges_order_id", "order_id"),
+        Index("ix_nudges_status", "status"),
+        Index("ix_nudges_kind", "kind"),
     )

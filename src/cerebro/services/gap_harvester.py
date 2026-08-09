@@ -72,23 +72,34 @@ def compute_next_ask_at(asked_at: datetime, ask_count_after: int) -> datetime | 
     return asked_at + timedelta(minutes=delay)
 
 
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Normalize datetimes to UTC-aware (SQLite often returns naive values)."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
 def should_ask(chase: ChaseView, *, now: datetime | None = None) -> bool:
     """Return True when a chase is due for exactly one ask under backoff rules."""
-    moment = now or datetime.now(UTC)
+    moment = _as_utc(now) or datetime.now(UTC)
     if chase.status != "open":
         return False
     if chase.ask_count >= MAX_ASKS:
         return False
     if chase.ask_count == 0:
         return True
-    if chase.next_ask_at is not None:
-        return moment >= chase.next_ask_at
-    if chase.last_asked_at is None:
+    next_ask_at = _as_utc(chase.next_ask_at)
+    if next_ask_at is not None:
+        return moment >= next_ask_at
+    last_asked_at = _as_utc(chase.last_asked_at)
+    if last_asked_at is None:
         return True
     delay = backoff_minutes_for_ask(chase.ask_count)
     if delay is None:
         return False
-    return moment >= chase.last_asked_at + timedelta(minutes=delay)
+    return moment >= last_asked_at + timedelta(minutes=delay)
 
 
 def record_ask(chase: ChaseView, *, asked_at: datetime | None = None) -> ChaseView:
