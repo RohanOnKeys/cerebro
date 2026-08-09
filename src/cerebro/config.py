@@ -1,4 +1,6 @@
-from pydantic import ConfigDict
+from typing import Literal
+
+from pydantic import ConfigDict, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -16,7 +18,16 @@ class Settings(BaseSettings):
     model_cortex: str = "gpt-4"
     featherless_api_key: str = ""
     featherless_base_url: str = "https://api.featherless.ai/v1"
+    tool_mode: Literal["native", "json"] = "native"
     environment: str = "development"
+
+    @field_validator("tool_mode", mode="before")
+    @classmethod
+    def normalize_tool_mode(cls, value: object) -> object:
+        """Normalize TOOL_MODE to a supported literal."""
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
 
 
 settings = Settings()

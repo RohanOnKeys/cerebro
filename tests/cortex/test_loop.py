@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 
 import cerebro.registry as registry_mod
 from cerebro.cortex.loop import ToolRoundLimitExceeded, run_tool_loop
+from cerebro.cortex.prompts import assemble_system_prompt
 from cerebro.db.models import Base, Org, Population, Principal
 
 
@@ -94,7 +95,6 @@ def test_forced_two_tool_response_executes_both_handlers(client_principal, monke
         "set_availability",
         replace(registry_mod.TOOLS["set_availability"], handler=availability_mock),
     )
-    # TOOLS_FOR is built at import time; refresh CLIENT entries for patched handlers.
     monkeypatch.setitem(
         registry_mod.TOOLS_FOR,
         Population.CLIENT,
@@ -174,7 +174,7 @@ def test_fifth_round_raises(client_principal):
 
 
 def test_history_window_keeps_last_12_messages(client_principal):
-    """Only the last 12 messages are sent to the model each round."""
+    """System prompt is prepended; only the last 12 history messages follow."""
     prior = [{"role": "user", "content": f"m{i}"} for i in range(20)]
     client = ScriptedClient([{"role": "assistant", "content": "ok"}])
 
@@ -186,6 +186,38 @@ def test_history_window_keeps_last_12_messages(client_principal):
     )
 
     sent = client.calls[0]["messages"]
-    assert len(sent) == 12
-    assert sent[0]["content"] == "m8"
+    assert sent[0]["role"] == "system"
+    assert sent[0]["content"] == assemble_system_prompt(Population.CLIENT)
+    assert len(sent) == 13
+    assert sent[1]["content"] == "m8"
     assert sent[-1]["content"] == "m19"
+
+
+def test_loop_system_prompt_differs_by_population(client_principal):
+    """CLIENT and DEV loops inject different system prompts."""
+    client = ScriptedClient(
+        [
+            {"role": "assistant", "content": "client-ok"},
+            {"role": "assistant", "content": "dev-ok"},
+        ]
+    )
+    messages = [{"role": "user", "content": "hello"}]
+
+    run_tool_loop(
+        client,
+        messages,
+        population=Population.CLIENT,
+        principal=client_principal,
+    )
+    run_tool_loop(
+        client,
+        messages,
+        population=Population.DEV,
+        principal=client_principal,
+    )
+
+    client_system = client.calls[0]["messages"][0]["content"]
+    dev_system = client.calls[1]["messages"][0]["content"]
+    assert client_system == assemble_system_prompt(Population.CLIENT)
+    assert dev_system == assemble_system_prompt(Population.DEV)
+    assert client_system != dev_system
