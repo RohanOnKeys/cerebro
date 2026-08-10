@@ -9,6 +9,8 @@ class Settings(BaseSettings):
 
     database_url: str
     redis_url: str = "redis://localhost:6379"
+    caspian_api_key: str = ""
+    caspian_base_url: str = "https://api.trycaspianai.com"
     caspian_token: str = ""
     telegram_bot_token: str = ""
     slack_bot_token: str = ""
