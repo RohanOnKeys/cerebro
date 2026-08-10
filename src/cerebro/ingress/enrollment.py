@@ -1,7 +1,16 @@
 import uuid
 from datetime import UTC, datetime
+
 from sqlalchemy.orm import Session
-from cerebro.db.models import Principal, Org, ChannelBinding, Population
+
+from cerebro.db.models import ChannelBinding, Org, Population, Principal
+
+
+def _ensure_org(session: Session, org_id: str) -> None:
+    """Create the org row if it doesn't exist yet (first-touch, not a seed script)."""
+    if session.get(Org, org_id) is None:
+        session.add(Org(id=org_id, name=org_id, created_at=datetime.now(UTC)))
+        session.flush()
 
 
 def enroll_unknown_sender(
@@ -11,6 +20,8 @@ def enroll_unknown_sender(
 
     Returns (principal, binding) tuple.
     """
+    _ensure_org(session, org_id)
+
     principal_id = str(uuid.uuid4())
     principal = Principal(
         id=principal_id,
