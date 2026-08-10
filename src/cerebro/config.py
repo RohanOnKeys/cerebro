@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     model_config = ConfigDict(env_file=".env", extra="ignore")
 
     database_url: str
-    redis_url: str = "redis://localhost:6379"
+    redis_url: str = "redis://localhost:6380"
     caspian_api_key: str = ""
     caspian_base_url: str = "https://api.trycaspianai.com"
     caspian_token: str = ""
