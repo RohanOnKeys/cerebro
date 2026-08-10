@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from cerebro.db.models import Population, Principal
 from cerebro.ingress.enrollment import enroll_unknown_sender
+from cerebro.services import orders as orders_service
 
 # Internal populations that may run team/ops tools. CLIENT is excluded.
 _TEAM_POPULATIONS = frozenset(
@@ -98,6 +99,77 @@ def set_availability(
     }
 
 
+def open_order(
+    *,
+    session: Session,
+    principal: Principal,
+    text: str = "",
+    order_type: str | None = None,
+    fields: dict[str, Any] | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Open an orders ledger row from free text and/or explicit type."""
+    order = orders_service.open_order(
+        session,
+        principal=principal,
+        text=text,
+        order_type=order_type,
+        fields=fields,
+    )
+    return orders_service.serialize_order(order)
+
+
+def update_order_fields(
+    *,
+    session: Session,
+    principal: Principal,
+    order_id: str,
+    fields: dict[str, Any],
+    **_: Any,
+) -> dict[str, Any]:
+    """Merge fields into an existing order."""
+    order = orders_service.update_order_fields(
+        session,
+        order_id=order_id,
+        fields=fields,
+        principal=principal,
+    )
+    if order is None:
+        return {"error": "order_not_found", "order_id": order_id}
+    return orders_service.serialize_order(order)
+
+
+def order_status(
+    *,
+    session: Session,
+    order_id: str,
+    **_: Any,
+) -> dict[str, Any]:
+    """Return status for one order."""
+    result = orders_service.order_status(session, order_id=order_id)
+    if result is None:
+        return {"error": "order_not_found", "order_id": order_id}
+    return result
+
+
+def list_orders(
+    *,
+    session: Session,
+    principal: Principal,
+    status: str | None = None,
+    limit: int = 20,
+    **_: Any,
+) -> dict[str, Any]:
+    """List orders visible to the calling principal."""
+    items = orders_service.list_orders(
+        session,
+        principal=principal,
+        status=status,
+        limit=limit,
+    )
+    return {"orders": items, "count": len(items)}
+
+
 TOOLS: dict[str, ToolSpec] = {
     "whoami": ToolSpec(
         name="whoami",
@@ -141,6 +213,62 @@ TOOLS: dict[str, ToolSpec] = {
             "additionalProperties": False,
         },
         handler=set_availability,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "open_order": ToolSpec(
+        name="open_order",
+        description="Open an order from free text; sets order_type on the ledger row.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "order_type": {"type": "string"},
+                "fields": {"type": "object"},
+            },
+            "additionalProperties": False,
+        },
+        handler=open_order,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "update_order_fields": ToolSpec(
+        name="update_order_fields",
+        description="Update collected fields on an existing order.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "string"},
+                "fields": {"type": "object"},
+            },
+            "required": ["order_id", "fields"],
+            "additionalProperties": False,
+        },
+        handler=update_order_fields,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "order_status": ToolSpec(
+        name="order_status",
+        description="Fetch one order by id.",
+        parameters={
+            "type": "object",
+            "properties": {"order_id": {"type": "string"}},
+            "required": ["order_id"],
+            "additionalProperties": False,
+        },
+        handler=order_status,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "list_orders": ToolSpec(
+        name="list_orders",
+        description="List orders for the caller's organization.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+            "additionalProperties": False,
+        },
+        handler=list_orders,
         allowed_populations=_ALL_POPULATIONS,
     ),
 }
