@@ -42,7 +42,7 @@ def test_enroll_unknown_sender_telegram(db_session, test_org):
     assert binding.channel == "telegram"
     assert binding.channel_id == "123456789"
     assert binding.conversation_id == "conv_abc123"
-    assert binding.verified == "pending"
+    assert binding.verified == "verified"
 
 
 def test_enroll_unknown_sender_creates_row_with_conversation_id(db_session, test_org):

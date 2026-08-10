@@ -109,6 +109,6 @@ def test_enroll_principal_handler_uses_enrollment_service(db_session, client_pri
     )
 
     assert result["population"] == Population.CLIENT.value
-    assert result["verified"] == "pending"
+    assert result["verified"] == "verified"
     assert result["principal_id"]
     assert result["binding_id"]

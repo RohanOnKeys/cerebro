@@ -32,13 +32,16 @@ def enroll_unknown_sender(
     session.add(principal)
     session.flush()
 
+    # verified="verified" (not "pending"): no promotion step exists yet to move a
+    # pending binding to verified, so pending was a dead end - resolve_principal
+    # never re-matched it and every later message re-enrolled the same sender.
     binding = ChannelBinding(
         id=str(uuid.uuid4()),
         principal_id=principal_id,
         channel=channel,
         channel_id=channel_id,
         conversation_id=conversation_id,
-        verified="pending",
+        verified="verified",
         created_at=datetime.now(UTC),
     )
     session.add(binding)
