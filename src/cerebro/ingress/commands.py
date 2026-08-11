@@ -13,6 +13,7 @@ class CommandVerb(str, Enum):
     RERUN = "RERUN"
     DISPATCH = "DISPATCH"
     CANCEL = "CANCEL"
+    AUDIT = "AUDIT"
 
 
 @dataclass

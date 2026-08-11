@@ -99,6 +99,7 @@ def handle_free_text(text: str, principal, session, channel: str) -> str:
 def execute_command(cmd, principal, session) -> str:
     """Execute a parsed command and return reply."""
     from cerebro.ingress.commands import CommandVerb
+    from cerebro.membrane import crossings as crossings_service
     from cerebro.services import tasks as tasks_service
 
     match cmd.verb:
@@ -162,6 +163,18 @@ def execute_command(cmd, principal, session) -> str:
             if not cmd.args:
                 return "CANCEL requires a run ID"
             return f"Canceling run {cmd.args[0]}"
+
+        case CommandVerb.AUDIT:
+            if principal.population.value == "client":
+                return "AUDIT is not available for your account"
+            rows = crossings_service.list_crossings(session, org_id=principal.org_id)
+            if not rows:
+                return "No crossings recorded yet"
+            lines = [
+                f"{row.source_population}->{row.target_population} {row.action} ({row.status})"
+                for row in rows[:10]
+            ]
+            return "Recent crossings:\n" + "\n".join(lines)
 
         case _:
             return "Unknown command"
