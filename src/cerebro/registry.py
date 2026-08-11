@@ -10,7 +10,10 @@ from sqlalchemy.orm import Session
 
 from cerebro.db.models import Population, Principal
 from cerebro.ingress.enrollment import enroll_unknown_sender
+from cerebro.services import meetings as meetings_service
 from cerebro.services import orders as orders_service
+from cerebro.services import summaries as summaries_service
+from cerebro.services import tasks as tasks_service
 
 # Internal populations that may run team/ops tools. CLIENT is excluded.
 _TEAM_POPULATIONS = frozenset(
@@ -170,6 +173,177 @@ def list_orders(
     return {"orders": items, "count": len(items)}
 
 
+
+def decompose_order(
+    *,
+    session: Session,
+    order_id: str,
+    designation: str,
+    required_skills: list[str] | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Split an order into one or more tasks, unassigned."""
+    from cerebro.db.models import Order
+
+    order = session.query(Order).filter(Order.id == order_id).first()
+    if order is None:
+        return {"error": "order_not_found", "order_id": order_id}
+    created = tasks_service.decompose_order(
+        session, order, designation=designation, required_skills=required_skills
+    )
+    return {
+        "tasks": [tasks_service.serialize_task(task) for task in created],
+        "count": len(created),
+    }
+
+
+def assign_task(
+    *,
+    session: Session,
+    org_id: str,
+    number: int,
+    **_: Any,
+) -> dict[str, Any]:
+    """Assign an open task via the designation/skills/wip_cap/load chain, then fan it out."""
+    task = tasks_service.get_task_by_number(session, org_id=org_id, number=number)
+    if task is None:
+        return {"error": "task_not_found", "number": number}
+    assignee = tasks_service.assign_task(session, task)
+    if assignee is None:
+        return {"error": "no_eligible_assignee", "number": number}
+    tasks_service.send_task_card(session, task)
+    return {
+        "task": tasks_service.serialize_task(task),
+        "assignee_principal_id": assignee.id,
+    }
+
+
+def ack_task(
+    *,
+    session: Session,
+    principal: Principal,
+    number: int,
+    **_: Any,
+) -> dict[str, Any]:
+    """Acknowledge a task, cancelling its remaining ladder rungs."""
+    task = tasks_service.ack_task(session, org_id=principal.org_id, number=number)
+    if task is None:
+        return {"error": "task_not_found", "number": number}
+    return tasks_service.serialize_task(task)
+
+
+def block_task(
+    *,
+    session: Session,
+    principal: Principal,
+    number: int,
+    reason: str = "",
+    **_: Any,
+) -> dict[str, Any]:
+    """Mark a task blocked and notify the org's leads."""
+    task = tasks_service.block_task(
+        session, org_id=principal.org_id, number=number, principal=principal, reason=reason
+    )
+    if task is None:
+        return {"error": "task_not_found", "number": number}
+    return tasks_service.serialize_task(task)
+
+
+def list_tasks(
+    *,
+    session: Session,
+    principal: Principal,
+    **_: Any,
+) -> dict[str, Any]:
+    """List tasks assigned to the calling principal."""
+    items = tasks_service.list_tasks_for_principal(session, principal=principal)
+    return {
+        "tasks": [tasks_service.serialize_task(task) for task in items],
+        "count": len(items),
+    }
+
+
+
+def schedule_meeting(
+    *,
+    session: Session,
+    principal: Principal,
+    title: str,
+    attendee_principal_ids: list[str] | None = None,
+    duration_minutes: int = 30,
+    starts_at: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Schedule a meeting, finding the earliest free slot when starts_at is omitted."""
+    import datetime as _dt
+
+    if starts_at:
+        parsed_starts_at = _dt.datetime.fromisoformat(starts_at)
+    else:
+        parsed_starts_at = meetings_service.find_slot(
+            [], duration_minutes=duration_minutes, after=_dt.datetime.now(_dt.UTC)
+        )
+    meeting = meetings_service.schedule_meeting(
+        session,
+        org_id=principal.org_id,
+        organizer_principal_id=principal.id,
+        title=title,
+        starts_at=parsed_starts_at,
+        duration_minutes=duration_minutes,
+        attendee_principal_ids=attendee_principal_ids or [],
+    )
+    return meetings_service.serialize_meeting(meeting)
+
+
+def rsvp_meeting(
+    *,
+    session: Session,
+    principal: Principal,
+    meeting_id: str,
+    status: str,
+    **_: Any,
+) -> dict[str, Any]:
+    """Record the calling principal's RSVP for a meeting."""
+    attendee = meetings_service.rsvp(
+        session, meeting_id=meeting_id, principal_id=principal.id, status=status
+    )
+    if attendee is None:
+        return {"error": "attendee_not_found", "meeting_id": meeting_id}
+    return {
+        "meeting_id": meeting_id,
+        "principal_id": principal.id,
+        "rsvp_status": attendee.rsvp_status,
+    }
+
+
+
+def request_summary(
+    *,
+    session: Session,
+    principal: Principal,
+    topic: str,
+    **_: Any,
+) -> dict[str, Any]:
+    """Open a summary request and notify the requester."""
+    order = summaries_service.request_summary(session, principal=principal, topic=topic)
+    return orders_service.serialize_order(order)
+
+
+def submit_summary(
+    *,
+    session: Session,
+    principal: Principal,
+    order_id: str,
+    text: str,
+    **_: Any,
+) -> dict[str, Any]:
+    """Submit one participant's dump toward a summary order."""
+    entry = summaries_service.submit_summary_entry(
+        session, order_id=order_id, principal_id=principal.id, text=text
+    )
+    return {"id": entry.id, "order_id": entry.order_id, "principal_id": entry.principal_id}
+
+
 TOOLS: dict[str, ToolSpec] = {
     "whoami": ToolSpec(
         name="whoami",
@@ -269,6 +443,140 @@ TOOLS: dict[str, ToolSpec] = {
             "additionalProperties": False,
         },
         handler=list_orders,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "decompose_order": ToolSpec(
+        name="decompose_order",
+        description="Split an order into one or more unassigned tasks.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "string"},
+                "designation": {"type": "string"},
+                "required_skills": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["order_id", "designation"],
+            "additionalProperties": False,
+        },
+        handler=decompose_order,
+        allowed_populations=_TEAM_POPULATIONS,
+    ),
+    "assign_task": ToolSpec(
+        name="assign_task",
+        description=(
+            "Assign an open task by designation, skills, wip_cap, then lowest load; "
+            "fans out the task card on success."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "org_id": {"type": "string"},
+                "number": {"type": "integer"},
+            },
+            "required": ["org_id", "number"],
+            "additionalProperties": False,
+        },
+        handler=assign_task,
+        allowed_populations=_TEAM_POPULATIONS,
+    ),
+    "ack_task": ToolSpec(
+        name="ack_task",
+        description="Acknowledge an assigned task by its number.",
+        parameters={
+            "type": "object",
+            "properties": {"number": {"type": "integer"}},
+            "required": ["number"],
+            "additionalProperties": False,
+        },
+        handler=ack_task,
+        allowed_populations=_TEAM_POPULATIONS,
+    ),
+    "block_task": ToolSpec(
+        name="block_task",
+        description="Mark an assigned task blocked and notify the org's leads.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "number": {"type": "integer"},
+                "reason": {"type": "string"},
+            },
+            "required": ["number"],
+            "additionalProperties": False,
+        },
+        handler=block_task,
+        allowed_populations=_TEAM_POPULATIONS,
+    ),
+    "list_tasks": ToolSpec(
+        name="list_tasks",
+        description="List tasks assigned to the calling principal.",
+        parameters={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+        handler=list_tasks,
+        allowed_populations=_TEAM_POPULATIONS,
+    ),
+    "schedule_meeting": ToolSpec(
+        name="schedule_meeting",
+        description=(
+            "Schedule a meeting with attendees; finds the earliest free slot when "
+            "starts_at is omitted."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "attendee_principal_ids": {"type": "array", "items": {"type": "string"}},
+                "duration_minutes": {"type": "integer"},
+                "starts_at": {"type": "string"},
+            },
+            "required": ["title"],
+            "additionalProperties": False,
+        },
+        handler=schedule_meeting,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "rsvp_meeting": ToolSpec(
+        name="rsvp_meeting",
+        description="Record the caller's RSVP (yes/no) for a meeting.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "meeting_id": {"type": "string"},
+                "status": {"type": "string", "enum": ["yes", "no", "pending"]},
+            },
+            "required": ["meeting_id", "status"],
+            "additionalProperties": False,
+        },
+        handler=rsvp_meeting,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "request_summary": ToolSpec(
+        name="request_summary",
+        description="Open a summary request for a topic and notify the requester.",
+        parameters={
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ["topic"],
+            "additionalProperties": False,
+        },
+        handler=request_summary,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "submit_summary": ToolSpec(
+        name="submit_summary",
+        description="Submit your notes/dump toward an open summary order.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "string"},
+                "text": {"type": "string"},
+            },
+            "required": ["order_id", "text"],
+            "additionalProperties": False,
+        },
+        handler=submit_summary,
         allowed_populations=_ALL_POPULATIONS,
     ),
 }

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from typing import Any, Literal, Protocol
 
 from sqlalchemy.orm import Session
 
+from cerebro.config import settings
 from cerebro.cortex.prompts import assemble_system_prompt
 from cerebro.db.models import Population, Principal
 from cerebro.registry import TOOLS_FOR, ToolSpec
@@ -224,13 +224,10 @@ def execute_tool_call(
 
 
 def _resolve_tool_mode(tool_mode: ToolMode | None) -> ToolMode:
-    """Resolve tool mode from an explicit arg, TOOL_MODE env, or native default."""
+    """Resolve tool mode from an explicit arg, else settings.tool_mode."""
     if tool_mode is not None:
         return tool_mode
-    env_mode = os.getenv("TOOL_MODE", "native").strip().lower()
-    if env_mode in ("native", "json"):
-        return env_mode
-    return "native"
+    return settings.tool_mode
 
 
 def run_tool_loop(

@@ -1,7 +1,9 @@
 # Progress and config files (local use only)
 checkpoint
+CHECKPOINT.md
 rules.md
 road.md
+anomaly.md
 .claude/
 
 # Python

@@ -8,11 +8,9 @@ class Settings(BaseSettings):
     model_config = ConfigDict(env_file=".env", extra="ignore")
 
     database_url: str
-    redis_url: str = "redis://localhost:6379"
-    caspian_token: str = ""
-    telegram_bot_token: str = ""
-    slack_bot_token: str = ""
-    discord_bot_token: str = ""
+    redis_url: str = "redis://localhost:6380"
+    caspian_api_key: str = ""
+    caspian_base_url: str = "https://api.trycaspianai.com"
     github_app_id: str = ""
     github_private_key_b64: str = ""
     model_cortex: str = "gpt-4"
@@ -20,6 +18,7 @@ class Settings(BaseSettings):
     featherless_base_url: str = "https://api.featherless.ai/v1"
     tool_mode: Literal["native", "json"] = "native"
     environment: str = "development"
+    nudge_time_scale: float = 1.0
 
     @field_validator("tool_mode", mode="before")
     @classmethod

@@ -7,9 +7,6 @@ from typing import Any
 import httpx
 
 
-DEFAULT_FEATHERLESS_BASE_URL = "https://api.featherless.ai/v1"
-
-
 class FeatherlessClient:
     """Thin client for Featherless OpenAI-compatible chat completions."""
 
@@ -33,13 +30,13 @@ class FeatherlessClient:
             if api_key is None:
                 api_key = settings.featherless_api_key
             if base_url is None:
-                base_url = settings.featherless_base_url or DEFAULT_FEATHERLESS_BASE_URL
+                base_url = settings.featherless_base_url
             if model is None:
                 model = settings.model_cortex
 
         self.api_key = api_key or ""
-        self.base_url = (base_url or DEFAULT_FEATHERLESS_BASE_URL).rstrip("/")
-        self.model = model or "gpt-4"
+        self.base_url = (base_url or "").rstrip("/")
+        self.model = model or ""
         self.timeout = timeout
         self._http = http_client or httpx.Client(timeout=timeout)
         self._owns_http = http_client is None
