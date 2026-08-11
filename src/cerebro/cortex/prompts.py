@@ -6,7 +6,7 @@ import json
 from typing import Literal
 
 from cerebro.db.models import Population
-from cerebro.registry import TOOLS_FOR
+from cerebro.registry import TOOLS, TOOLS_FOR
 
 ToolMode = Literal["native", "json"]
 
@@ -39,35 +39,29 @@ _BEHAVIOR: dict[Population, str] = {
     ),
 }
 
-_POLICY: dict[Population, str] = {
+# Population-specific notes layered onto the dynamically computed allowed/denied
+# tool lists below. Keep these about *judgment*, not tool names — the tool
+# names are derived from the registry so this can never drift out of sync
+# with it again (it previously hardcoded a 3-tool list from Phase 2 and
+# silently went stale as Phase 3/4 added 13 more tools).
+_POLICY_NOTES: dict[Population, str] = {
     Population.CLIENT: (
-        "Policy: population=client. "
-        "Allowed tools: whoami, set_availability. "
-        "Denied tools: enroll_principal and any staff-only or CI control. "
         "Never invent elevated access. If a request needs a denied tool, refuse and explain the limit."
     ),
     Population.OPS: (
-        "Policy: population=ops. "
-        "Allowed tools: whoami, set_availability, enroll_principal. "
         "Use enroll_principal only when onboarding a sender is explicitly required. "
         "Do not expose client PII beyond what the tools return."
     ),
     Population.DEV: (
-        "Policy: population=dev. "
-        "Allowed tools: whoami, set_availability, enroll_principal. "
-        "Prefer tool calls over speculation for identity and enrollment questions. "
-        "You may inspect principal state via whoami before mutating availability or enrolling."
+        "Prefer tool calls over speculation for identity, order, task, and meeting questions. "
+        "Inspect state via whoami/list_* before mutating it."
     ),
     Population.LEAD: (
-        "Policy: population=lead. "
-        "Allowed tools: whoami, set_availability, enroll_principal. "
         "Escalate ambiguity rather than guessing policy exceptions. "
         "Keep decisions attributable to tool results."
     ),
     Population.ADMIN: (
-        "Policy: population=admin. "
-        "Allowed tools: whoami, set_availability, enroll_principal. "
-        "You may authorize enrollment and availability changes when requested. "
+        "You may authorize enrollment, task, and meeting changes when requested. "
         "Refuse any action outside the registered tool surface."
     ),
 }
@@ -79,8 +73,20 @@ def behavior_prompt(population: Population) -> str:
 
 
 def policy_prompt(population: Population) -> str:
-    """Return the tool and access policy for a population."""
-    return _POLICY[population]
+    """Return the tool and access policy for a population, computed from the registry."""
+    allowed = sorted(tool.name for tool in TOOLS_FOR[population])
+    denied = sorted(name for name in TOOLS if name not in allowed)
+
+    lines = [
+        f"Policy: population={population.value}.",
+        f"Allowed tools: {', '.join(allowed)}.",
+    ]
+    if denied:
+        lines.append(f"Denied tools: {', '.join(denied)}.")
+    note = _POLICY_NOTES.get(population)
+    if note:
+        lines.append(note)
+    return " ".join(lines)
 
 
 def json_tool_mode_prompt(population: Population) -> str:

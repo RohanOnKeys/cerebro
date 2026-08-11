@@ -50,3 +50,13 @@ def test_assemble_system_prompt_includes_behavior_and_policy():
     prompt = assemble_system_prompt(Population.CLIENT)
     assert behavior_prompt(Population.CLIENT) in prompt
     assert policy_prompt(Population.CLIENT) in prompt
+
+
+def test_policy_allowed_tools_match_the_registry_for_every_population():
+    """policy_prompt must never hardcode a tool list that drifts from TOOLS_FOR."""
+    from cerebro.registry import TOOLS_FOR
+
+    for population in Population:
+        policy = policy_prompt(population)
+        for tool in TOOLS_FOR[population]:
+            assert tool.name in policy
