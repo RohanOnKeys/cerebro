@@ -8,6 +8,21 @@ from sqlalchemy.orm import declarative_base, relationship
 Base = declarative_base()
 
 
+class TaskStatus(str, Enum):
+    OPEN = "open"
+    ACKED = "acked"
+    BLOCKED = "blocked"
+    DONE = "done"
+    CANCELLED = "cancelled"
+
+
+class LadderStatus(str, Enum):
+    ACTIVE = "active"
+    ACKED = "acked"
+    CANCELLED = "cancelled"
+    EXHAUSTED = "exhausted"
+
+
 class Population(str, Enum):
     CLIENT = "client"
     OPS = "ops"
@@ -32,6 +47,9 @@ class GapChaseStatus(str, Enum):
 class NudgeKind(str, Enum):
     GAP_ASK = "gap_ask"
     GAP_ESCALATE = "gap_escalate"
+    TASK_CARD = "task_card"
+    TASK_LADDER = "task_ladder"
+    TASK_BLOCKED = "task_blocked"
 
 
 class NudgeStatus(str, Enum):
@@ -58,6 +76,8 @@ class Principal(Base):
     org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
     population = Column(SQLEnum(Population), nullable=False)
     email = Column(String)
+    skills_json = Column(String, nullable=False, default="[]")
+    wip_cap = Column(Integer, nullable=False, default=3)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     org = relationship("Org", back_populates="principals")
@@ -169,4 +189,35 @@ class Nudge(Base):
         Index("ix_nudges_order_id", "order_id"),
         Index("ix_nudges_status", "status"),
         Index("ix_nudges_kind", "kind"),
+    )
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    order_id = Column(String, ForeignKey("orders.id"))
+    number = Column(Integer, nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(String)
+    designation = Column(String, nullable=False)
+    required_skills_json = Column(String, nullable=False, default="[]")
+    status = Column(String, nullable=False, default=TaskStatus.OPEN.value)
+    assignee_principal_id = Column(String, ForeignKey("principals.id"))
+    blocked_reason = Column(String)
+    ladder_rung = Column(Integer, nullable=False, default=0)
+    ladder_status = Column(String, nullable=False, default=LadderStatus.ACTIVE.value)
+    ladder_last_fired_at = Column(DateTime)
+    ladder_next_due_at = Column(DateTime)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    acked_at = Column(DateTime)
+
+    __table_args__ = (
+        Index("ix_tasks_org_id", "org_id"),
+        Index("ix_tasks_order_id", "order_id"),
+        Index("ix_tasks_status", "status"),
+        Index("ix_tasks_assignee_principal_id", "assignee_principal_id"),
+        Index("ix_tasks_org_id_number", "org_id", "number", unique=True),
     )
