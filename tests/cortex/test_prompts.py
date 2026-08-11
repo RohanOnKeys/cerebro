@@ -60,3 +60,25 @@ def test_policy_allowed_tools_match_the_registry_for_every_population():
         policy = policy_prompt(population)
         for tool in TOOLS_FOR[population]:
             assert tool.name in policy
+
+
+def test_client_behavior_asks_for_input_in_layman_terms_too():
+    """CLIENT tone must be symmetric: plain language for both output and asks."""
+    behavior = behavior_prompt(Population.CLIENT)
+    assert "no jargon" in behavior
+    assert "ask" in behavior.lower()
+
+
+def test_dev_behavior_asks_for_input_in_technical_terms_too():
+    """DEV tone must be symmetric: technical language for both output and asks."""
+    behavior = behavior_prompt(Population.DEV)
+    assert "precise technical terms" in behavior
+    assert "ask" in behavior.lower()
+
+
+def test_assemble_system_prompt_includes_guardrails():
+    """Every population's system prompt must include the guardrails block."""
+    from cerebro.cortex.prompts import GUARDRAILS
+
+    for population in Population:
+        assert GUARDRAILS in assemble_system_prompt(population)
