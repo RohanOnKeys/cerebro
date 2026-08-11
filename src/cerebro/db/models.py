@@ -68,6 +68,9 @@ class NudgeKind(str, Enum):
     TASK_CARD = "task_card"
     TASK_LADDER = "task_ladder"
     TASK_BLOCKED = "task_blocked"
+    MEETING_REMINDER = "meeting_reminder"
+    SUMMARY_REQUEST = "summary_request"
+    SUMMARY_CHASE = "summary_chase"
 
 
 class NudgeStatus(str, Enum):
@@ -283,4 +286,19 @@ class MeetingAttendee(Base):
             "principal_id",
             unique=True,
         ),
+    )
+
+
+class SummaryEntry(Base):
+    __tablename__ = "summary_entries"
+
+    id = Column(String, primary_key=True)
+    order_id = Column(String, ForeignKey("orders.id"), nullable=False)
+    principal_id = Column(String, ForeignKey("principals.id"), nullable=False)
+    text = Column(String, nullable=False)
+    submitted_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_summary_entries_order_id", "order_id"),
+        Index("ix_summary_entries_principal_id", "principal_id"),
     )
