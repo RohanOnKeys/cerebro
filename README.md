@@ -14,6 +14,15 @@ You do not open a new app. You do not learn a new interface. You message Cerebro
 
 ---
 
+## Channel Links
+
+- **Discord:** https://discord.gg/C4Kmnzkwu
+- **Slack:** https://join.slack.com/t/secondbrain-pnl3918/shared_invite/zt-46iwnm6dg-gMjDMzDWVQ2QyZEy488ZRQ
+- **Email:** cerebro-1d74f5@agents.trycaspianai.com
+- **Telegram:** @cerebro_operations_bot
+
+---
+
 ## What it does
 
 Cerebro sits between your people and your systems. It verifies who is talking, works out what they want, and then does it: books the meeting, chases the person who has not replied, remembers what was decided, and fires the deploy.
