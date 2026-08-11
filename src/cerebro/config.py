@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     telegram_handle: str = ""
     github_app_id: str = ""
     github_private_key_b64: str = ""
+    github_installation_id: str = ""
+    github_webhook_secret: str = ""
+    github_default_org_id: str = "default_org"
+    ci_flake_budget: int = 3
+    ci_flake_window_hours: int = 24
     model_cortex: str = "gpt-4"
     featherless_api_key: str = ""
     featherless_base_url: str = "https://api.featherless.ai/v1"

@@ -9,6 +9,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from cerebro.db.models import Population, Principal
+from cerebro.github import api as github_api
+from cerebro.github import app_auth as github_auth
+from cerebro.github import runs as ci_runs_service
 from cerebro.ingress.enrollment import enroll_unknown_sender
 from cerebro.membrane import crossings as crossings_service
 from cerebro.membrane import policy as policy_service
@@ -433,6 +436,138 @@ def relay_to_population(
     }
 
 
+def _github_api_from_settings() -> github_api.GitHubAPI:
+    """Build a GitHubAPI using app credentials from settings."""
+    auth = github_auth.GitHubAppAuth()
+    return github_api.GitHubAPI(auth)
+
+
+def list_ci_runs(
+    *,
+    session: Session,
+    principal: Principal,
+    owner: str,
+    repo: str,
+    branch: str = "",
+    status: str = "",
+    per_page: int = 30,
+    api: github_api.GitHubAPI | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """List recent GitHub Actions runs and upsert them into the CI ledger."""
+    client = api or _github_api_from_settings()
+    try:
+        rows = ci_runs_service.list_ci_runs_live(
+            session,
+            client,
+            org_id=principal.org_id,
+            owner=owner,
+            repo=repo,
+            branch=branch or None,
+            status=status or None,
+            per_page=per_page,
+        )
+    except (github_auth.GitHubAuthError, github_api.GitHubAPIError) as exc:
+        return {"error": "github_error", "detail": str(exc)}
+    return {
+        "runs": [ci_runs_service.serialize_ci_run(row) for row in rows],
+        "count": len(rows),
+    }
+
+
+def explain_ci_failure(
+    *,
+    session: Session,
+    principal: Principal,
+    owner: str,
+    repo: str,
+    run_id: str,
+    api: github_api.GitHubAPI | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Explain a failed CI run using jobs, steps, and check annotations."""
+    client = api or _github_api_from_settings()
+    try:
+        return ci_runs_service.explain_ci_failure(
+            session,
+            client,
+            org_id=principal.org_id,
+            owner=owner,
+            repo=repo,
+            run_id=run_id,
+        )
+    except (github_auth.GitHubAuthError, github_api.GitHubAPIError) as exc:
+        return {"error": "github_error", "detail": str(exc)}
+
+
+def rerun_workflow(
+    *,
+    session: Session,
+    principal: Principal,
+    owner: str,
+    repo: str,
+    run_id: str,
+    api: github_api.GitHubAPI | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Re-run a workflow run (tier-2; gated by verify executor)."""
+    client = api or _github_api_from_settings()
+    try:
+        client.rerun_workflow(owner, repo, run_id)
+    except (github_auth.GitHubAuthError, github_api.GitHubAPIError) as exc:
+        return {"error": "github_error", "detail": str(exc)}
+    return {"status": "rerun_requested", "owner": owner, "repo": repo, "run_id": run_id}
+
+
+def dispatch_workflow(
+    *,
+    session: Session,
+    principal: Principal,
+    owner: str,
+    repo: str,
+    workflow_id: str,
+    ref: str,
+    inputs: dict[str, Any] | None = None,
+    api: github_api.GitHubAPI | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Dispatch a workflow (tier-2; gated by verify executor)."""
+    client = api or _github_api_from_settings()
+    try:
+        client.dispatch_workflow(
+            owner, repo, workflow_id, ref=ref, inputs=inputs or None
+        )
+    except (github_auth.GitHubAuthError, github_api.GitHubAPIError) as exc:
+        return {"error": "github_error", "detail": str(exc)}
+    return {
+        "status": "dispatched",
+        "owner": owner,
+        "repo": repo,
+        "workflow_id": workflow_id,
+        "ref": ref,
+        "requested_by": principal.id,
+    }
+
+
+def cancel_run(
+    *,
+    session: Session,
+    principal: Principal,
+    owner: str,
+    repo: str,
+    run_id: str,
+    api: github_api.GitHubAPI | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Cancel an in-progress workflow run (tier-2; gated by verify executor)."""
+    client = api or _github_api_from_settings()
+    try:
+        client.cancel_run(owner, repo, run_id)
+    except (github_auth.GitHubAuthError, github_api.GitHubAPIError) as exc:
+        return {"error": "github_error", "detail": str(exc)}
+    return {"status": "cancel_requested", "owner": owner, "repo": repo, "run_id": run_id}
+
+
 TOOLS: dict[str, ToolSpec] = {
     "whoami": ToolSpec(
         name="whoami",
@@ -709,6 +844,95 @@ TOOLS: dict[str, ToolSpec] = {
         },
         handler=relay_to_population,
         allowed_populations=_ALL_POPULATIONS,
+    ),
+    "list_ci_runs": ToolSpec(
+        name="list_ci_runs",
+        description="List recent GitHub Actions workflow runs for a repository.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "branch": {"type": "string"},
+                "status": {"type": "string"},
+                "per_page": {"type": "integer"},
+            },
+            "required": ["owner", "repo"],
+            "additionalProperties": False,
+        },
+        handler=list_ci_runs,
+        allowed_populations=_TEAM_POPULATIONS,
+        tier=1,
+    ),
+    "explain_ci_failure": ToolSpec(
+        name="explain_ci_failure",
+        description="Explain why a GitHub Actions run failed (jobs, steps, annotations).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "run_id": {"type": "string"},
+            },
+            "required": ["owner", "repo", "run_id"],
+            "additionalProperties": False,
+        },
+        handler=explain_ci_failure,
+        allowed_populations=_TEAM_POPULATIONS,
+        tier=1,
+    ),
+    "rerun_workflow": ToolSpec(
+        name="rerun_workflow",
+        description="Re-run a GitHub Actions workflow run (requires CONFIRM).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "run_id": {"type": "string"},
+            },
+            "required": ["owner", "repo", "run_id"],
+            "additionalProperties": False,
+        },
+        handler=rerun_workflow,
+        allowed_populations=_TEAM_POPULATIONS,
+        tier=2,
+    ),
+    "dispatch_workflow": ToolSpec(
+        name="dispatch_workflow",
+        description="Dispatch a GitHub Actions workflow (requires CONFIRM).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "workflow_id": {"type": "string"},
+                "ref": {"type": "string"},
+                "inputs": {"type": "object"},
+            },
+            "required": ["owner", "repo", "workflow_id", "ref"],
+            "additionalProperties": False,
+        },
+        handler=dispatch_workflow,
+        allowed_populations=_TEAM_POPULATIONS,
+        tier=2,
+    ),
+    "cancel_run": ToolSpec(
+        name="cancel_run",
+        description="Cancel an in-progress GitHub Actions run (requires CONFIRM).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "run_id": {"type": "string"},
+            },
+            "required": ["owner", "repo", "run_id"],
+            "additionalProperties": False,
+        },
+        handler=cancel_run,
+        allowed_populations=_TEAM_POPULATIONS,
+        tier=2,
     ),
 }
 
