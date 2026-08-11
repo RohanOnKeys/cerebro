@@ -49,6 +49,7 @@ async def on_message(sender: str, channel: str, text: str) -> str:
 def execute_command(cmd, principal, session) -> str:
     """Execute a parsed command and return reply."""
     from cerebro.ingress.commands import CommandVerb
+    from cerebro.services import tasks as tasks_service
 
     match cmd.verb:
         case CommandVerb.WHOAMI:
@@ -56,15 +57,30 @@ def execute_command(cmd, principal, session) -> str:
 
         case CommandVerb.ACK:
             if not cmd.args:
-                return "ACK requires a task ID"
-            task_id = cmd.args[0]
-            return f"Task {task_id} acknowledged"
+                return "ACK requires a task number"
+            try:
+                number = int(cmd.args[0])
+            except ValueError:
+                return f"'{cmd.args[0]}' is not a valid task number"
+            task = tasks_service.ack_task(session, org_id=principal.org_id, number=number)
+            if task is None:
+                return f"Task {number} not found"
+            return f"Task {number} acknowledged"
 
         case CommandVerb.BLOCKED:
             if not cmd.args:
-                return "BLOCKED requires a task ID"
-            task_id = cmd.args[0]
-            return f"Task {task_id} marked as blocked"
+                return "BLOCKED requires a task number"
+            try:
+                number = int(cmd.args[0])
+            except ValueError:
+                return f"'{cmd.args[0]}' is not a valid task number"
+            reason = " ".join(cmd.args[1:]) or "no reason given"
+            task = tasks_service.block_task(
+                session, org_id=principal.org_id, number=number, principal=principal, reason=reason
+            )
+            if task is None:
+                return f"Task {number} not found"
+            return f"Task {number} marked as blocked and lead notified"
 
         case CommandVerb.CONFIRM:
             if not cmd.args:
