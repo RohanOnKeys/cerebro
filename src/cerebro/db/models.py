@@ -23,6 +23,24 @@ class LadderStatus(str, Enum):
     EXHAUSTED = "exhausted"
 
 
+class MeetingStatus(str, Enum):
+    SCHEDULED = "scheduled"
+    CANCELLED = "cancelled"
+
+
+class RSVPStatus(str, Enum):
+    PENDING = "pending"
+    YES = "yes"
+    NO = "no"
+
+
+class ReminderStage(str, Enum):
+    NONE = "none"
+    T_MINUS_24H = "t_minus_24h"
+    T_MINUS_60M = "t_minus_60m"
+    T_MINUS_10M = "t_minus_10m"
+
+
 class Population(str, Enum):
     CLIENT = "client"
     OPS = "ops"
@@ -220,4 +238,49 @@ class Task(Base):
         Index("ix_tasks_status", "status"),
         Index("ix_tasks_assignee_principal_id", "assignee_principal_id"),
         Index("ix_tasks_org_id_number", "org_id", "number", unique=True),
+    )
+
+
+class Meeting(Base):
+    __tablename__ = "meetings"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    organizer_principal_id = Column(String, ForeignKey("principals.id"), nullable=False)
+    title = Column(String, nullable=False)
+    starts_at = Column(DateTime, nullable=False)
+    duration_minutes = Column(Integer, nullable=False, default=30)
+    status = Column(String, nullable=False, default=MeetingStatus.SCHEDULED.value)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    attendees = relationship("MeetingAttendee", back_populates="meeting")
+
+    __table_args__ = (
+        Index("ix_meetings_org_id", "org_id"),
+        Index("ix_meetings_starts_at", "starts_at"),
+        Index("ix_meetings_status", "status"),
+    )
+
+
+class MeetingAttendee(Base):
+    __tablename__ = "meeting_attendees"
+
+    id = Column(String, primary_key=True)
+    meeting_id = Column(String, ForeignKey("meetings.id"), nullable=False)
+    principal_id = Column(String, ForeignKey("principals.id"), nullable=False)
+    rsvp_status = Column(String, nullable=False, default=RSVPStatus.PENDING.value)
+    reminder_stage = Column(String, nullable=False, default=ReminderStage.NONE.value)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    meeting = relationship("Meeting", back_populates="attendees")
+
+    __table_args__ = (
+        Index("ix_meeting_attendees_meeting_id", "meeting_id"),
+        Index("ix_meeting_attendees_principal_id", "principal_id"),
+        Index(
+            "ix_meeting_attendees_meeting_id_principal_id",
+            "meeting_id",
+            "principal_id",
+            unique=True,
+        ),
     )
