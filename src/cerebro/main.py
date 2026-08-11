@@ -53,34 +53,47 @@ async def on_message(sender: str, channel: str, text: str) -> str:
         if cmd:
             return execute_command(cmd, principal, session)
 
-        return handle_free_text(text, principal, session)
+        return handle_free_text(text, principal, session, channel)
 
     finally:
         session.close()
 
 
-def handle_free_text(text: str, principal, session) -> str:
-    """Route free text through the population-gated cortex tool-calling loop."""
+def handle_free_text(text: str, principal, session, channel: str) -> str:
+    """Route free text through the cortex tool loop, remembered via the message ledger."""
     from cerebro.cortex.loop import ToolRoundLimitExceeded, run_tool_loop
+    from cerebro.services import messages as messages_service
+
+    messages_service.record_message(
+        session, principal=principal, channel=channel, role="user", content=text
+    )
+    history = messages_service.to_chat_messages(
+        messages_service.recent_messages(session, principal_id=principal.id)
+    )
 
     try:
         reply = run_tool_loop(
             _get_chat_client(),
-            [{"role": "user", "content": text}],
+            history,
             population=principal.population,
             principal=principal,
             session=session,
         )
-        return reply.strip() if reply and reply.strip() else "Done."
+        reply = reply.strip() if reply and reply.strip() else "Done."
     except ToolRoundLimitExceeded:
-        return (
+        reply = (
             "That needed more steps than I'm allowed to take at once — "
             "try breaking it into smaller requests."
         )
     except (httpx.HTTPError, ValueError):
         # LLM API boundary: a network hiccup or bad upstream response must not
         # take down the live channel loop the way an uncaught exception would.
-        return "I couldn't reach the model to handle that — please try again in a moment."
+        reply = "I couldn't reach the model to handle that — please try again in a moment."
+
+    messages_service.record_message(
+        session, principal=principal, channel=channel, role="assistant", content=reply
+    )
+    return reply
 
 
 def execute_command(cmd, principal, session) -> str:

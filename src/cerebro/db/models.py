@@ -79,6 +79,11 @@ class NudgeStatus(str, Enum):
     FAILED = "failed"
 
 
+class MessageRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
 class Org(Base):
     __tablename__ = "orgs"
 
@@ -301,4 +306,26 @@ class SummaryEntry(Base):
     __table_args__ = (
         Index("ix_summary_entries_order_id", "order_id"),
         Index("ix_summary_entries_principal_id", "principal_id"),
+    )
+
+
+class Message(Base):
+    """Persisted conversation ledger: one row per user/assistant turn."""
+
+    __tablename__ = "messages"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    principal_id = Column(String, ForeignKey("principals.id"), nullable=False)
+    channel = Column(String, nullable=False)
+    # Population snapshotted at send time (not re-joined from principals),
+    # so history reads stay correct even if a principal's population changes later.
+    population = Column(String, nullable=False)
+    role = Column(String, nullable=False)
+    content = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_messages_principal_id_created_at", "principal_id", "created_at"),
+        Index("ix_messages_org_id", "org_id"),
     )
