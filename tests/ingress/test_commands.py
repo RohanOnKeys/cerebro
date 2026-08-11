@@ -19,6 +19,14 @@ def test_parse_confirm_with_arg():
     assert cmd.args == ["7qk3x2"]
 
 
+def test_parse_audit():
+    """Parse AUDIT with no arguments."""
+    cmd = parse_command("AUDIT")
+    assert cmd is not None
+    assert cmd.verb == CommandVerb.AUDIT
+    assert cmd.args == []
+
+
 def test_parse_case_insensitive():
     """Commands are case-insensitive."""
     cmd1 = parse_command("ack 41")
