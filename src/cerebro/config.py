@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     featherless_base_url: str = "https://api.featherless.ai/v1"
     tool_mode: Literal["native", "json"] = "native"
     environment: str = "development"
+    nudge_time_scale: float = 1.0
 
     @field_validator("tool_mode", mode="before")
     @classmethod
