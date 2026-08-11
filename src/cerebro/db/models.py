@@ -91,6 +91,13 @@ class NudgeStatus(str, Enum):
     FAILED = "failed"
 
 
+class ApprovalState(str, Enum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    DENIED = "denied"
+    EXPIRED = "expired"
+
+
 class MessageRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
@@ -411,4 +418,28 @@ class PendingEnrollment(Base):
             "channel_id",
             unique=True,
         ),
+    )
+
+
+class Approval(Base):
+    """A pending confirmation challenge addressed by CONFIRM/DENY nonce."""
+
+    __tablename__ = "approvals"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    principal_id = Column(String, ForeignKey("principals.id"), nullable=False)
+    nonce = Column(String, nullable=False)
+    state = Column(String, nullable=False, default=ApprovalState.PENDING.value)
+    action = Column(String, nullable=False)
+    payload_json = Column(String, nullable=False, default="{}")
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    resolved_at = Column(DateTime)
+
+    __table_args__ = (
+        Index("ix_approvals_nonce", "nonce", unique=True),
+        Index("ix_approvals_state_expires_at", "state", "expires_at"),
+        Index("ix_approvals_org_id", "org_id"),
+        Index("ix_approvals_principal_id", "principal_id"),
     )
