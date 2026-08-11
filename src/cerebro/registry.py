@@ -12,6 +12,7 @@ from cerebro.db.models import Population, Principal
 from cerebro.ingress.enrollment import enroll_unknown_sender
 from cerebro.services import meetings as meetings_service
 from cerebro.services import orders as orders_service
+from cerebro.services import summaries as summaries_service
 from cerebro.services import tasks as tasks_service
 
 # Internal populations that may run team/ops tools. CLIENT is excluded.
@@ -315,6 +316,34 @@ def rsvp_meeting(
     }
 
 
+
+def request_summary(
+    *,
+    session: Session,
+    principal: Principal,
+    topic: str,
+    **_: Any,
+) -> dict[str, Any]:
+    """Open a summary request and notify the requester."""
+    order = summaries_service.request_summary(session, principal=principal, topic=topic)
+    return orders_service.serialize_order(order)
+
+
+def submit_summary(
+    *,
+    session: Session,
+    principal: Principal,
+    order_id: str,
+    text: str,
+    **_: Any,
+) -> dict[str, Any]:
+    """Submit one participant's dump toward a summary order."""
+    entry = summaries_service.submit_summary_entry(
+        session, order_id=order_id, principal_id=principal.id, text=text
+    )
+    return {"id": entry.id, "order_id": entry.order_id, "principal_id": entry.principal_id}
+
+
 TOOLS: dict[str, ToolSpec] = {
     "whoami": ToolSpec(
         name="whoami",
@@ -521,6 +550,33 @@ TOOLS: dict[str, ToolSpec] = {
             "additionalProperties": False,
         },
         handler=rsvp_meeting,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "request_summary": ToolSpec(
+        name="request_summary",
+        description="Open a summary request for a topic and notify the requester.",
+        parameters={
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ["topic"],
+            "additionalProperties": False,
+        },
+        handler=request_summary,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "submit_summary": ToolSpec(
+        name="submit_summary",
+        description="Submit your notes/dump toward an open summary order.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "string"},
+                "text": {"type": "string"},
+            },
+            "required": ["order_id", "text"],
+            "additionalProperties": False,
+        },
+        handler=submit_summary,
         allowed_populations=_ALL_POPULATIONS,
     ),
 }
