@@ -44,6 +44,7 @@ def mint_challenge(
     principal: Principal,
     action: str,
     args: dict[str, Any] | None = None,
+    channel: str = "",
     ttl: timedelta = DEFAULT_TTL,
     now: datetime | None = None,
 ) -> Approval:
@@ -51,6 +52,9 @@ def mint_challenge(
     moment = now or datetime.now(UTC)
     tool_args = dict(args or {})
     action_hash = compute_action_hash(action, tool_args)
+    payload: dict[str, Any] = {"args": tool_args, "action_hash": action_hash}
+    if channel:
+        payload["channel"] = channel
     approval = Approval(
         id=str(uuid.uuid4()),
         org_id=principal.org_id,
@@ -58,12 +62,38 @@ def mint_challenge(
         nonce=mint_nonce(),
         state=ApprovalState.PENDING.value,
         action=action,
-        payload_json=json.dumps(
-            {"args": tool_args, "action_hash": action_hash},
-            sort_keys=True,
-        ),
+        payload_json=json.dumps(payload, sort_keys=True),
         expires_at=moment + ttl,
         created_at=moment,
+    )
+    session.add(approval)
+    session.commit()
+    return approval
+
+
+def write_refusal_audit(
+    session: Session,
+    *,
+    principal: Principal,
+    reason: str,
+    action: str,
+    details: dict[str, Any] | None = None,
+    now: datetime | None = None,
+) -> Approval:
+    """Persist a denied Approval row documenting a verification refusal."""
+    moment = now or datetime.now(UTC)
+    payload = {"refusal_reason": reason, **(details or {})}
+    approval = Approval(
+        id=str(uuid.uuid4()),
+        org_id=principal.org_id,
+        principal_id=principal.id,
+        nonce=mint_nonce(),
+        state=ApprovalState.DENIED.value,
+        action=f"refusal.{reason}",
+        payload_json=json.dumps(payload, sort_keys=True),
+        expires_at=moment,
+        created_at=moment,
+        resolved_at=moment,
     )
     session.add(approval)
     session.commit()
@@ -88,3 +118,8 @@ def stored_args(approval: Approval) -> dict[str, Any]:
     """Return the args embedded in the approval payload."""
     args = load_payload(approval).get("args") or {}
     return dict(args) if isinstance(args, dict) else {}
+
+
+def stored_channel(approval: Approval) -> str:
+    """Return the channel sealed when the challenge was minted."""
+    return str(load_payload(approval).get("channel") or "")

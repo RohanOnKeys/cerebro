@@ -6,7 +6,14 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from cerebro.db.models import ApprovalState, Base, Org, Population, Principal
+from cerebro.db.models import (
+    ApprovalState,
+    Base,
+    ChannelBinding,
+    Org,
+    Population,
+    Principal,
+)
 from cerebro.registry import ToolSpec
 from cerebro.verify.challenge import mint_challenge
 from cerebro.verify.executor import (
@@ -36,6 +43,26 @@ def db_session():
             org_id="org_1",
             population=Population.DEV,
             email="dev@test.com",
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.add(
+        ChannelBinding(
+            id="bind_tg",
+            principal_id="principal_1",
+            channel="telegram",
+            channel_id="tg-1",
+            verified="verified",
+            created_at=datetime.now(UTC),
+        )
+    )
+    session.add(
+        ChannelBinding(
+            id="bind_slack",
+            principal_id="principal_1",
+            channel="slack",
+            channel_id="U1",
+            verified="verified",
             created_at=datetime.now(UTC),
         )
     )
@@ -124,6 +151,7 @@ def test_tier2_first_call_mints_challenge_without_executing(db_session, principa
         principal=principal,
         tool_name="risky.deploy",
         args={"target": "prod"},
+        channel="telegram",
         tools=tools,
     )
     assert outcome["status"] == "confirmation_required"
@@ -153,12 +181,14 @@ def test_confirm_executes_after_challenge(db_session, principal):
         principal=principal,
         tool_name="risky.deploy",
         args={"target": "prod"},
+        channel="telegram",
         tools=tools,
     )
     confirmed = confirm(
         db_session,
         principal=principal,
         nonce=outcome["nonce"],
+        channel="slack",
         tools=tools,
     )
     assert confirmed["status"] == "confirmed"
@@ -180,6 +210,7 @@ def test_deny_does_not_execute(db_session, principal):
         principal=principal,
         tool_name="risky.deploy",
         args={"target": "prod"},
+        channel="telegram",
         tools=tools,
     )
     denied = deny(db_session, principal=principal, nonce=outcome["nonce"])
@@ -191,7 +222,6 @@ def test_command_path_confirm_deny(db_session, principal):
     """CONFIRM/DENY command wiring uses the executor."""
     from cerebro.ingress.commands import parse_command
     from cerebro.main import execute_command
-    from cerebro.registry import ToolSpec
     import cerebro.registry as registry_mod
 
     calls: list[dict] = []
@@ -215,12 +245,14 @@ def test_command_path_confirm_deny(db_session, principal):
             principal=principal,
             tool_name="risky.deploy",
             args={},
+            channel="telegram",
             tools=registry_mod.TOOLS,
         )
         reply = execute_command(
             parse_command(f"CONFIRM {minted['nonce']}"),
             principal,
             db_session,
+            channel="slack",
         )
         assert reply == f"Confirmed action for {minted['nonce']}"
         assert len(calls) == 1
@@ -230,12 +262,14 @@ def test_command_path_confirm_deny(db_session, principal):
             principal=principal,
             tool_name="risky.deploy",
             args={},
+            channel="telegram",
             tools=registry_mod.TOOLS,
         )
         deny_reply = execute_command(
             parse_command(f"DENY {minted2['nonce']}"),
             principal,
             db_session,
+            channel="slack",
         )
         assert deny_reply == f"Denied action for {minted2['nonce']}"
         assert len(calls) == 1

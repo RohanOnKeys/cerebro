@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from cerebro.db.models import Approval, ApprovalState, Principal
+from cerebro.db.models import Approval, ApprovalState, ChannelBinding, Principal
 from cerebro.registry import TOOLS, ToolSpec
 from cerebro.verify.challenge import (
     compute_action_hash,
@@ -16,6 +16,15 @@ from cerebro.verify.challenge import (
     nonce_alphabet_ok,
     stored_action_hash,
     stored_args,
+    stored_channel,
+    write_refusal_audit,
+)
+
+REFUSAL_SINGLE_CHANNEL = "single_bound_channel"
+REFUSAL_SAME_CHANNEL = "same_channel_confirm"
+REFUSAL_WRONG_PRINCIPAL = "wrong_principal"
+ENROLL_GUIDANCE = (
+    "Enroll a second channel (Telegram, Slack, Discord, or Email) before confirming."
 )
 
 
@@ -121,12 +130,25 @@ def _lookup(session: Session, nonce: str) -> Approval | None:
     return session.query(Approval).filter(Approval.nonce == nonce).first()
 
 
+def count_verified_bindings(session: Session, principal_id: str) -> int:
+    """Count verified channel bindings for a principal."""
+    return (
+        session.query(ChannelBinding)
+        .filter(
+            ChannelBinding.principal_id == principal_id,
+            ChannelBinding.verified == "verified",
+        )
+        .count()
+    )
+
+
 def invoke(
     session: Session,
     *,
     principal: Principal,
     tool_name: str,
     args: dict[str, Any] | None = None,
+    channel: str = "",
     tools: dict[str, ToolSpec] | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
@@ -145,11 +167,28 @@ def invoke(
             return result
         return {"result": result}
 
+    if count_verified_bindings(session, principal.id) < 2:
+        audit = write_refusal_audit(
+            session,
+            principal=principal,
+            reason=REFUSAL_SINGLE_CHANNEL,
+            action=tool_name,
+            details={"channel": channel, "bindings": 1},
+            now=now,
+        )
+        return {
+            "status": "refused",
+            "reason": REFUSAL_SINGLE_CHANNEL,
+            "message": ENROLL_GUIDANCE,
+            "approval_id": audit.id,
+        }
+
     approval = mint_challenge(
         session,
         principal=principal,
         action=tool_name,
         args=tool_args,
+        channel=channel,
         now=now,
     )
     return {
@@ -166,12 +205,42 @@ def confirm(
     *,
     principal: Principal,
     nonce: str,
+    channel: str = "",
     tools: dict[str, ToolSpec] | None = None,
     now: datetime | None = None,
     args_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Confirm a pending challenge and execute the sealed tool call."""
     approval = _lookup(session, nonce)
+
+    if approval is not None and approval.principal_id != principal.id:
+        write_refusal_audit(
+            session,
+            principal=principal,
+            reason=REFUSAL_WRONG_PRINCIPAL,
+            action=approval.action,
+            details={
+                "nonce": nonce,
+                "owner_principal_id": approval.principal_id,
+                "channel": channel,
+            },
+            now=now,
+        )
+        raise ChallengeRejected("wrong principal confirms")
+
+    if approval is not None and channel:
+        mint_channel = stored_channel(approval)
+        if mint_channel and channel == mint_channel:
+            write_refusal_audit(
+                session,
+                principal=principal,
+                reason=REFUSAL_SAME_CHANNEL,
+                action=approval.action,
+                details={"nonce": nonce, "channel": channel},
+                now=now,
+            )
+            raise ChallengeRejected("same-channel confirm refused")
+
     sealed_args = stored_args(approval) if approval is not None else {}
     check_args = sealed_args if args_override is None else dict(args_override)
     check_action = approval.action if approval is not None else ""
@@ -197,13 +266,12 @@ def confirm(
     session.commit()
 
     result = tool.handler(**sealed_args, principal=principal, session=session)
-    payload = {
+    return {
         "status": "confirmed",
         "nonce": nonce,
         "action": approval.action,
         "result": result,
     }
-    return payload
 
 
 def deny(
