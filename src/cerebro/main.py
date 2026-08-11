@@ -3,7 +3,6 @@ import httpx
 from cerebro.db.session import SessionLocal
 from cerebro.ingress.dedupe import dedupe
 from cerebro.ingress.principals import resolve_principal, touch_binding
-from cerebro.ingress.enrollment import enroll_unknown_sender
 from cerebro.ingress.commands import parse_command
 
 _chat_client = None
@@ -40,11 +39,7 @@ async def on_message(sender: str, channel: str, text: str) -> str:
         principal = resolve_principal(session, channel, sender)
 
         if not principal:
-            org_id = "default_org"
-            principal, binding = enroll_unknown_sender(
-                session, org_id, channel, sender, f"conv_{message_id}"
-            )
-            return f"Welcome! You've been enrolled as {principal.population.value}"
+            return handle_unknown_sender(session, channel, sender, text)
 
         binding = touch_binding(session, principal.id, channel, sender)
 
@@ -57,6 +52,48 @@ async def on_message(sender: str, channel: str, text: str) -> str:
 
     finally:
         session.close()
+
+
+def handle_unknown_sender(session, channel: str, channel_id: str, text: str) -> str:
+    """Ask an unrecognized sender whether they're a client or on the team.
+
+    First message from a (channel, channel_id) pair we've never seen gets
+    the question; the reply to that question is parsed for a population and
+    an email, and the email is what makes identity persist across channels -
+    find_or_create_principal_by_email binds a second channel to the same
+    principal instead of minting a new one when the email already matches.
+    """
+    from cerebro.ingress.enrollment import (
+        ENROLLMENT_PROMPT,
+        complete_enrollment,
+        get_pending_enrollment,
+        parse_enrollment_answer,
+        start_enrollment,
+    )
+
+    org_id = "default_org"
+    conversation_id = f"conv_{channel}_{channel_id}"
+
+    pending = get_pending_enrollment(session, channel=channel, channel_id=channel_id)
+    if pending is None:
+        start_enrollment(
+            session,
+            org_id=org_id,
+            channel=channel,
+            channel_id=channel_id,
+            conversation_id=conversation_id,
+        )
+        return ENROLLMENT_PROMPT
+
+    answer = parse_enrollment_answer(text)
+    if answer is None:
+        return f"Sorry, I didn't catch that. {ENROLLMENT_PROMPT}"
+
+    population, email = answer
+    principal, _binding = complete_enrollment(
+        session, pending=pending, population=population, email=email
+    )
+    return f"Welcome! You've been enrolled as {principal.population.value} ({email})."
 
 
 def handle_free_text(text: str, principal, session, channel: str) -> str:
@@ -99,6 +136,7 @@ def handle_free_text(text: str, principal, session, channel: str) -> str:
 def execute_command(cmd, principal, session) -> str:
     """Execute a parsed command and return reply."""
     from cerebro.ingress.commands import CommandVerb
+    from cerebro.membrane import crossings as crossings_service
     from cerebro.services import tasks as tasks_service
 
     match cmd.verb:
@@ -162,6 +200,18 @@ def execute_command(cmd, principal, session) -> str:
             if not cmd.args:
                 return "CANCEL requires a run ID"
             return f"Canceling run {cmd.args[0]}"
+
+        case CommandVerb.AUDIT:
+            if principal.population.value == "client":
+                return "AUDIT is not available for your account"
+            rows = crossings_service.list_crossings(session, org_id=principal.org_id)
+            if not rows:
+                return "No crossings recorded yet"
+            lines = [
+                f"{row.source_population}->{row.target_population} {row.action} ({row.status})"
+                for row in rows[:10]
+            ]
+            return "Recent crossings:\n" + "\n".join(lines)
 
         case _:
             return "Unknown command"

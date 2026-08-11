@@ -18,6 +18,8 @@ from cerebro.db.models import (
 from cerebro.services.meetings import (
     due_reminder_stage,
     find_slot,
+    list_meetings,
+    meeting_status,
     process_due_meeting_reminders,
     rsvp,
     schedule_meeting,
@@ -236,3 +238,84 @@ def test_reminder_not_resent_within_same_stage(db_session, org):
 
     assert len(first) == 1
     assert second == []
+
+
+# --- list_meetings / meeting_status: the "check" side, missing until now ---
+
+
+def test_list_meetings_includes_organized_and_attended(db_session, org):
+    organizer = _principal(db_session, org, id="p_organizer")
+    attendee = _principal(db_session, org, id="p_attendee")
+    other = _principal(db_session, org, id="p_other")
+
+    organized = schedule_meeting(
+        db_session,
+        org_id=org.id,
+        organizer_principal_id=organizer.id,
+        title="i organize this",
+        starts_at=NOON,
+        attendee_principal_ids=[attendee.id],
+    )
+    schedule_meeting(
+        db_session,
+        org_id=org.id,
+        organizer_principal_id=other.id,
+        title="i'm not invited",
+        starts_at=NOON,
+    )
+
+    organizer_meetings = list_meetings(db_session, principal_id=organizer.id)
+    attendee_meetings = list_meetings(db_session, principal_id=attendee.id)
+    other_meetings = list_meetings(db_session, principal_id=other.id)
+
+    assert [m.id for m in organizer_meetings] == [organized.id]
+    assert [m.id for m in attendee_meetings] == [organized.id]
+    assert len(other_meetings) == 1
+    assert organized.id not in [m.id for m in other_meetings]
+
+
+def test_list_meetings_orders_soonest_first(db_session, org):
+    organizer = _principal(db_session, org, id="p_organizer")
+    later = schedule_meeting(
+        db_session,
+        org_id=org.id,
+        organizer_principal_id=organizer.id,
+        title="later",
+        starts_at=NOON + timedelta(days=1),
+    )
+    sooner = schedule_meeting(
+        db_session,
+        org_id=org.id,
+        organizer_principal_id=organizer.id,
+        title="sooner",
+        starts_at=NOON,
+    )
+
+    result = list_meetings(db_session, principal_id=organizer.id)
+
+    assert [m.id for m in result] == [sooner.id, later.id]
+
+
+def test_meeting_status_includes_attendee_rsvp_statuses(db_session, org):
+    organizer = _principal(db_session, org, id="p_organizer")
+    attendee = _principal(db_session, org, id="p_attendee")
+    meeting = schedule_meeting(
+        db_session,
+        org_id=org.id,
+        organizer_principal_id=organizer.id,
+        title="planning",
+        starts_at=NOON,
+        attendee_principal_ids=[attendee.id],
+    )
+    rsvp(db_session, meeting_id=meeting.id, principal_id=attendee.id, status="yes")
+
+    result = meeting_status(db_session, meeting_id=meeting.id)
+
+    assert result["title"] == "planning"
+    rsvp_by_principal = {a["principal_id"]: a["rsvp_status"] for a in result["attendees"]}
+    assert rsvp_by_principal[attendee.id] == "yes"
+    assert rsvp_by_principal[organizer.id] == "pending"
+
+
+def test_meeting_status_unknown_id_returns_none(db_session, org):
+    assert meeting_status(db_session, meeting_id="does-not-exist") is None

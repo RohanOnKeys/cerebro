@@ -41,6 +41,18 @@ class ReminderStage(str, Enum):
     T_MINUS_10M = "t_minus_10m"
 
 
+class PolicyAction(str, Enum):
+    ALLOW = "allow"
+    REDACT = "redact"
+    DENY = "deny"
+
+
+class CrossingStatus(str, Enum):
+    RECORDED = "recorded"
+    SENT = "sent"
+    DENIED = "denied"
+
+
 class Population(str, Enum):
     CLIENT = "client"
     OPS = "ops"
@@ -328,4 +340,75 @@ class Message(Base):
     __table_args__ = (
         Index("ix_messages_principal_id_created_at", "principal_id", "created_at"),
         Index("ix_messages_org_id", "org_id"),
+    )
+
+
+class Policy(Base):
+    """A seeded crossing rule: what happens when content moves source -> target."""
+
+    __tablename__ = "policies"
+
+    id = Column(String, primary_key=True)
+    source_population = Column(String, nullable=False)
+    target_population = Column(String, nullable=False)
+    action = Column(String, nullable=False)
+    redact_fields_json = Column(String, nullable=False, default="[]")
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index(
+            "ix_policies_source_target",
+            "source_population",
+            "target_population",
+            unique=True,
+        ),
+    )
+
+
+class Crossing(Base):
+    """Audit row for one population-boundary crossing attempt.
+
+    Written before the content is actually relayed, not after - so a crash
+    or send failure between the two still leaves an accurate audit trail.
+    """
+
+    __tablename__ = "crossings"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    principal_id = Column(String, ForeignKey("principals.id"), nullable=False)
+    source_population = Column(String, nullable=False)
+    target_population = Column(String, nullable=False)
+    action = Column(String, nullable=False)
+    content_ref = Column(String)
+    status = Column(String, nullable=False, default=CrossingStatus.RECORDED.value)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    sent_at = Column(DateTime)
+
+    __table_args__ = (
+        Index("ix_crossings_org_id", "org_id"),
+        Index("ix_crossings_principal_id", "principal_id"),
+        Index("ix_crossings_created_at", "created_at"),
+    )
+
+
+class PendingEnrollment(Base):
+    """An unknown sender has been asked client-vs-team but hasn't answered yet."""
+
+    __tablename__ = "pending_enrollments"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    channel = Column(String, nullable=False)
+    channel_id = Column(String, nullable=False)
+    conversation_id = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index(
+            "ix_pending_enrollments_channel_channel_id",
+            "channel",
+            "channel_id",
+            unique=True,
+        ),
     )

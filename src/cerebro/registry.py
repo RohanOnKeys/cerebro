@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 
 from cerebro.db.models import Population, Principal
 from cerebro.ingress.enrollment import enroll_unknown_sender
+from cerebro.membrane import crossings as crossings_service
+from cerebro.membrane import policy as policy_service
+from cerebro.membrane import redact as redact_service
 from cerebro.services import meetings as meetings_service
 from cerebro.services import orders as orders_service
 from cerebro.services import summaries as summaries_service
@@ -316,6 +319,32 @@ def rsvp_meeting(
     }
 
 
+def list_meetings(
+    *,
+    session: Session,
+    principal: Principal,
+    **_: Any,
+) -> dict[str, Any]:
+    """List meetings the calling principal organizes or attends."""
+    items = meetings_service.list_meetings(session, principal_id=principal.id)
+    return {
+        "meetings": [meetings_service.serialize_meeting(meeting) for meeting in items],
+        "count": len(items),
+    }
+
+
+def meeting_status(
+    *,
+    session: Session,
+    meeting_id: str,
+    **_: Any,
+) -> dict[str, Any]:
+    """Check one meeting's details and every attendee's RSVP status."""
+    result = meetings_service.meeting_status(session, meeting_id=meeting_id)
+    if result is None:
+        return {"error": "meeting_not_found", "meeting_id": meeting_id}
+    return result
+
 
 def request_summary(
     *,
@@ -342,6 +371,64 @@ def submit_summary(
         session, order_id=order_id, principal_id=principal.id, text=text
     )
     return {"id": entry.id, "order_id": entry.order_id, "principal_id": entry.principal_id}
+
+
+
+def relay_to_population(
+    *,
+    session: Session,
+    principal: Principal,
+    target_population: str,
+    text: str = "",
+    order_id: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Relay content across a population boundary under membrane policy.
+
+    Records the crossing before resolving any content (audit-first), denies
+    fail-closed if no policy row covers (caller's population, target), and
+    redacts digest text per the matched rule before marking the crossing sent.
+    """
+    from cerebro.db.models import Order
+
+    decision = policy_service.evaluate_crossing(
+        session, source=principal.population, target=target_population
+    )
+    crossing = crossings_service.record_crossing(
+        session,
+        org_id=principal.org_id,
+        principal_id=principal.id,
+        source=principal.population,
+        target=target_population,
+        action=decision.action,
+        content_ref=order_id,
+    )
+
+    if decision.action == "deny":
+        return {
+            "error": "relay_denied",
+            "target_population": target_population,
+            "crossing_id": crossing.id,
+        }
+
+    content = text
+    if order_id:
+        order = session.query(Order).filter(Order.id == order_id).first()
+        if order is None:
+            return {"error": "order_not_found", "order_id": order_id}
+        fields = orders_service.loads_fields(order.fields_json)
+        content = fields.get("digest", order.free_text or "")
+
+    if decision.action == "redact":
+        content = redact_service.redact_digest_text(content, decision.redact_fields)
+
+    crossings_service.mark_crossing_sent(session, crossing.id)
+    return {
+        "delivered_to": target_population,
+        "action": decision.action,
+        "content": content,
+        "crossing_id": crossing.id,
+    }
 
 
 TOOLS: dict[str, ToolSpec] = {
@@ -552,6 +639,29 @@ TOOLS: dict[str, ToolSpec] = {
         handler=rsvp_meeting,
         allowed_populations=_ALL_POPULATIONS,
     ),
+    "list_meetings": ToolSpec(
+        name="list_meetings",
+        description="List meetings the caller organizes or attends.",
+        parameters={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+        handler=list_meetings,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "meeting_status": ToolSpec(
+        name="meeting_status",
+        description="Check one meeting's details and every attendee's RSVP status.",
+        parameters={
+            "type": "object",
+            "properties": {"meeting_id": {"type": "string"}},
+            "required": ["meeting_id"],
+            "additionalProperties": False,
+        },
+        handler=meeting_status,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
     "request_summary": ToolSpec(
         name="request_summary",
         description="Open a summary request for a topic and notify the requester.",
@@ -577,6 +687,25 @@ TOOLS: dict[str, ToolSpec] = {
             "additionalProperties": False,
         },
         handler=submit_summary,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "relay_to_population": ToolSpec(
+        name="relay_to_population",
+        description=(
+            "Relay text or an order's digest to another population, applying membrane "
+            "policy (allow/redact/deny) for the caller's population -> target pair."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "target_population": {"type": "string"},
+                "text": {"type": "string"},
+                "order_id": {"type": "string"},
+            },
+            "required": ["target_population"],
+            "additionalProperties": False,
+        },
+        handler=relay_to_population,
         allowed_populations=_ALL_POPULATIONS,
     ),
 }

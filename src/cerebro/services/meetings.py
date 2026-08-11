@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Sequence
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from cerebro.clock.ladder import skip_quiet_hours
@@ -45,6 +46,40 @@ def serialize_meeting(meeting: Meeting) -> dict[str, Any]:
         "duration_minutes": meeting.duration_minutes,
         "status": meeting.status,
     }
+
+
+def list_meetings(session: Session, *, principal_id: str) -> list[Meeting]:
+    """List meetings where the principal organizes or attends, soonest first."""
+    attendee_meeting_ids = session.query(MeetingAttendee.meeting_id).filter(
+        MeetingAttendee.principal_id == principal_id
+    )
+    return (
+        session.query(Meeting)
+        .filter(
+            or_(
+                Meeting.organizer_principal_id == principal_id,
+                Meeting.id.in_(attendee_meeting_ids),
+            )
+        )
+        .order_by(Meeting.starts_at.asc())
+        .all()
+    )
+
+
+def meeting_status(session: Session, *, meeting_id: str) -> dict[str, Any] | None:
+    """Return a serialized meeting plus every attendee's RSVP status."""
+    meeting = session.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if meeting is None:
+        return None
+    attendees = (
+        session.query(MeetingAttendee).filter(MeetingAttendee.meeting_id == meeting_id).all()
+    )
+    data = serialize_meeting(meeting)
+    data["attendees"] = [
+        {"principal_id": attendee.principal_id, "rsvp_status": attendee.rsvp_status}
+        for attendee in attendees
+    ]
+    return data
 
 
 def schedule_meeting(
