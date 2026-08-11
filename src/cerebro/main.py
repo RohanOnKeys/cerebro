@@ -1,8 +1,22 @@
+import httpx
+
 from cerebro.db.session import SessionLocal
 from cerebro.ingress.dedupe import dedupe
 from cerebro.ingress.principals import resolve_principal, touch_binding
 from cerebro.ingress.enrollment import enroll_unknown_sender
 from cerebro.ingress.commands import parse_command
+
+_chat_client = None
+
+
+def _get_chat_client():
+    """Lazily construct and reuse one FeatherlessClient (owns a pooled httpx.Client)."""
+    global _chat_client
+    if _chat_client is None:
+        from cerebro.cortex.featherless import FeatherlessClient
+
+        _chat_client = FeatherlessClient()
+    return _chat_client
 
 
 async def on_message(sender: str, channel: str, text: str) -> str:
@@ -12,7 +26,7 @@ async def on_message(sender: str, channel: str, text: str) -> str:
     1. Dedupe: check if message already processed
     2. Resolve/Enroll: find or create principal
     3. Touch: update binding timestamp
-    4. Command: parse and validate command
+    4. Command: parse the fixed grammar; free text falls through to the cortex tool loop
     5. Reply: generate response
     """
     session = SessionLocal()
@@ -36,14 +50,37 @@ async def on_message(sender: str, channel: str, text: str) -> str:
 
         cmd = parse_command(text)
 
-        if not cmd:
-            return "I didn't recognize that command. Try /WHOAMI or /HELP"
+        if cmd:
+            return execute_command(cmd, principal, session)
 
-        reply = execute_command(cmd, principal, session)
-        return reply
+        return handle_free_text(text, principal, session)
 
     finally:
         session.close()
+
+
+def handle_free_text(text: str, principal, session) -> str:
+    """Route free text through the population-gated cortex tool-calling loop."""
+    from cerebro.cortex.loop import ToolRoundLimitExceeded, run_tool_loop
+
+    try:
+        reply = run_tool_loop(
+            _get_chat_client(),
+            [{"role": "user", "content": text}],
+            population=principal.population,
+            principal=principal,
+            session=session,
+        )
+        return reply.strip() if reply and reply.strip() else "Done."
+    except ToolRoundLimitExceeded:
+        return (
+            "That needed more steps than I'm allowed to take at once — "
+            "try breaking it into smaller requests."
+        )
+    except (httpx.HTTPError, ValueError):
+        # LLM API boundary: a network hiccup or bad upstream response must not
+        # take down the live channel loop the way an uncaught exception would.
+        return "I couldn't reach the model to handle that — please try again in a moment."
 
 
 def execute_command(cmd, principal, session) -> str:
