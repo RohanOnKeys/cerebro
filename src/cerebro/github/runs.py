@@ -27,6 +27,7 @@ def serialize_ci_run(run: CiRun) -> dict[str, Any]:
         "conclusion": run.conclusion or "",
         "html_url": run.html_url,
         "event": run.event,
+        "task_id": run.task_id or "",
         "failure_summary": run.failure_summary or "",
         "created_at": run.created_at.isoformat() if run.created_at else "",
         "updated_at": run.updated_at.isoformat() if run.updated_at else "",

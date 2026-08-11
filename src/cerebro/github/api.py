@@ -108,3 +108,79 @@ class GitHubAPI:
         if isinstance(body, list):
             return list(body)
         return []
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+    ) -> Any:
+        response = self._http.request(
+            method,
+            f"{self.api_base}{path}",
+            headers=self._headers(),
+            params=params or {},
+            json=json_body,
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise GitHubAPIError(
+                f"{method} {path} failed: {exc.response.status_code}"
+            ) from exc
+        if response.status_code == 204 or not response.content:
+            return {}
+        return response.json()
+
+    def rerun_workflow(self, owner: str, repo: str, run_id: int | str) -> dict[str, Any]:
+        """Re-run all jobs for a workflow run."""
+        return self._request(
+            "POST", f"/repos/{owner}/{repo}/actions/runs/{run_id}/rerun"
+        )
+
+    def dispatch_workflow(
+        self,
+        owner: str,
+        repo: str,
+        workflow_id: str,
+        *,
+        ref: str,
+        inputs: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Trigger workflow_dispatch for a workflow file or id."""
+        body: dict[str, Any] = {"ref": ref}
+        if inputs:
+            body["inputs"] = inputs
+        return self._request(
+            "POST",
+            f"/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches",
+            json_body=body,
+        )
+
+    def cancel_run(self, owner: str, repo: str, run_id: int | str) -> dict[str, Any]:
+        """Cancel an in-progress workflow run."""
+        return self._request(
+            "POST", f"/repos/{owner}/{repo}/actions/runs/{run_id}/cancel"
+        )
+
+    def create_issue(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        title: str,
+        body: str,
+        labels: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Open a GitHub issue (used when flake budget is exhausted)."""
+        payload: dict[str, Any] = {"title": title, "body": body}
+        if labels:
+            payload["labels"] = labels
+        result = self._request(
+            "POST", f"/repos/{owner}/{repo}/issues", json_body=payload
+        )
+        if not isinstance(result, dict):
+            raise GitHubAPIError("unexpected create issue payload")
+        return result
