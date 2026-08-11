@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     github_default_org_id: str = "default_org"
     ci_flake_budget: int = 3
     ci_flake_window_hours: int = 24
-    model_cortex: str = "gpt-4"
+    model_cortex: str = "Qwen/Qwen3-32B"
     featherless_api_key: str = ""
     featherless_base_url: str = "https://api.featherless.ai/v1"
     tool_mode: Literal["native", "json"] = "native"
