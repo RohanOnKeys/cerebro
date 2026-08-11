@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from cerebro.db.models import Population, Principal
 from cerebro.ingress.enrollment import enroll_unknown_sender
+from cerebro.services import meetings as meetings_service
 from cerebro.services import orders as orders_service
 from cerebro.services import tasks as tasks_service
 
@@ -261,6 +262,59 @@ def list_tasks(
     }
 
 
+
+def schedule_meeting(
+    *,
+    session: Session,
+    principal: Principal,
+    title: str,
+    attendee_principal_ids: list[str] | None = None,
+    duration_minutes: int = 30,
+    starts_at: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Schedule a meeting, finding the earliest free slot when starts_at is omitted."""
+    import datetime as _dt
+
+    if starts_at:
+        parsed_starts_at = _dt.datetime.fromisoformat(starts_at)
+    else:
+        parsed_starts_at = meetings_service.find_slot(
+            [], duration_minutes=duration_minutes, after=_dt.datetime.now(_dt.UTC)
+        )
+    meeting = meetings_service.schedule_meeting(
+        session,
+        org_id=principal.org_id,
+        organizer_principal_id=principal.id,
+        title=title,
+        starts_at=parsed_starts_at,
+        duration_minutes=duration_minutes,
+        attendee_principal_ids=attendee_principal_ids or [],
+    )
+    return meetings_service.serialize_meeting(meeting)
+
+
+def rsvp_meeting(
+    *,
+    session: Session,
+    principal: Principal,
+    meeting_id: str,
+    status: str,
+    **_: Any,
+) -> dict[str, Any]:
+    """Record the calling principal's RSVP for a meeting."""
+    attendee = meetings_service.rsvp(
+        session, meeting_id=meeting_id, principal_id=principal.id, status=status
+    )
+    if attendee is None:
+        return {"error": "attendee_not_found", "meeting_id": meeting_id}
+    return {
+        "meeting_id": meeting_id,
+        "principal_id": principal.id,
+        "rsvp_status": attendee.rsvp_status,
+    }
+
+
 TOOLS: dict[str, ToolSpec] = {
     "whoami": ToolSpec(
         name="whoami",
@@ -433,6 +487,41 @@ TOOLS: dict[str, ToolSpec] = {
         },
         handler=list_tasks,
         allowed_populations=_TEAM_POPULATIONS,
+    ),
+    "schedule_meeting": ToolSpec(
+        name="schedule_meeting",
+        description=(
+            "Schedule a meeting with attendees; finds the earliest free slot when "
+            "starts_at is omitted."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "attendee_principal_ids": {"type": "array", "items": {"type": "string"}},
+                "duration_minutes": {"type": "integer"},
+                "starts_at": {"type": "string"},
+            },
+            "required": ["title"],
+            "additionalProperties": False,
+        },
+        handler=schedule_meeting,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "rsvp_meeting": ToolSpec(
+        name="rsvp_meeting",
+        description="Record the caller's RSVP (yes/no) for a meeting.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "meeting_id": {"type": "string"},
+                "status": {"type": "string", "enum": ["yes", "no", "pending"]},
+            },
+            "required": ["meeting_id", "status"],
+            "additionalProperties": False,
+        },
+        handler=rsvp_meeting,
+        allowed_populations=_ALL_POPULATIONS,
     ),
 }
 
