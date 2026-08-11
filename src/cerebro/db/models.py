@@ -443,3 +443,33 @@ class Approval(Base):
         Index("ix_approvals_org_id", "org_id"),
         Index("ix_approvals_principal_id", "principal_id"),
     )
+
+
+class CiRun(Base):
+    """Cached GitHub Actions workflow run (CI ledger)."""
+
+    __tablename__ = "ci_runs"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    github_run_id = Column(String, nullable=False)
+    owner = Column(String, nullable=False)
+    repo = Column(String, nullable=False)
+    workflow_name = Column(String, nullable=False, default="")
+    head_branch = Column(String, nullable=False, default="")
+    head_sha = Column(String, nullable=False, default="")
+    status = Column(String, nullable=False, default="")
+    conclusion = Column(String)
+    html_url = Column(String, nullable=False, default="")
+    event = Column(String, nullable=False, default="")
+    requested_by_principal_id = Column(String, ForeignKey("principals.id"))
+    failure_summary = Column(String)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_ci_runs_org_id_github_run_id", "org_id", "github_run_id", unique=True),
+        Index("ix_ci_runs_org_id", "org_id"),
+        Index("ix_ci_runs_status", "status"),
+        Index("ix_ci_runs_conclusion", "conclusion"),
+    )

@@ -9,6 +9,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from cerebro.db.models import Population, Principal
+from cerebro.github import api as github_api
+from cerebro.github import app_auth as github_auth
+from cerebro.github import runs as ci_runs_service
 from cerebro.ingress.enrollment import enroll_unknown_sender
 from cerebro.membrane import crossings as crossings_service
 from cerebro.membrane import policy as policy_service
@@ -433,6 +436,70 @@ def relay_to_population(
     }
 
 
+def _github_api_from_settings() -> github_api.GitHubAPI:
+    """Build a GitHubAPI using app credentials from settings."""
+    auth = github_auth.GitHubAppAuth()
+    return github_api.GitHubAPI(auth)
+
+
+def list_ci_runs(
+    *,
+    session: Session,
+    principal: Principal,
+    owner: str,
+    repo: str,
+    branch: str = "",
+    status: str = "",
+    per_page: int = 30,
+    api: github_api.GitHubAPI | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """List recent GitHub Actions runs and upsert them into the CI ledger."""
+    client = api or _github_api_from_settings()
+    try:
+        rows = ci_runs_service.list_ci_runs_live(
+            session,
+            client,
+            org_id=principal.org_id,
+            owner=owner,
+            repo=repo,
+            branch=branch or None,
+            status=status or None,
+            per_page=per_page,
+        )
+    except (github_auth.GitHubAuthError, github_api.GitHubAPIError) as exc:
+        return {"error": "github_error", "detail": str(exc)}
+    return {
+        "runs": [ci_runs_service.serialize_ci_run(row) for row in rows],
+        "count": len(rows),
+    }
+
+
+def explain_ci_failure(
+    *,
+    session: Session,
+    principal: Principal,
+    owner: str,
+    repo: str,
+    run_id: str,
+    api: github_api.GitHubAPI | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Explain a failed CI run using jobs, steps, and check annotations."""
+    client = api or _github_api_from_settings()
+    try:
+        return ci_runs_service.explain_ci_failure(
+            session,
+            client,
+            org_id=principal.org_id,
+            owner=owner,
+            repo=repo,
+            run_id=run_id,
+        )
+    except (github_auth.GitHubAuthError, github_api.GitHubAPIError) as exc:
+        return {"error": "github_error", "detail": str(exc)}
+
+
 TOOLS: dict[str, ToolSpec] = {
     "whoami": ToolSpec(
         name="whoami",
@@ -709,6 +776,42 @@ TOOLS: dict[str, ToolSpec] = {
         },
         handler=relay_to_population,
         allowed_populations=_ALL_POPULATIONS,
+    ),
+    "list_ci_runs": ToolSpec(
+        name="list_ci_runs",
+        description="List recent GitHub Actions workflow runs for a repository.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "branch": {"type": "string"},
+                "status": {"type": "string"},
+                "per_page": {"type": "integer"},
+            },
+            "required": ["owner", "repo"],
+            "additionalProperties": False,
+        },
+        handler=list_ci_runs,
+        allowed_populations=_TEAM_POPULATIONS,
+        tier=1,
+    ),
+    "explain_ci_failure": ToolSpec(
+        name="explain_ci_failure",
+        description="Explain why a GitHub Actions run failed (jobs, steps, annotations).",
+        parameters={
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "run_id": {"type": "string"},
+            },
+            "required": ["owner", "repo", "run_id"],
+            "additionalProperties": False,
+        },
+        handler=explain_ci_failure,
+        allowed_populations=_TEAM_POPULATIONS,
+        tier=1,
     ),
 }
 
