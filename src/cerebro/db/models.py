@@ -390,3 +390,25 @@ class Crossing(Base):
         Index("ix_crossings_principal_id", "principal_id"),
         Index("ix_crossings_created_at", "created_at"),
     )
+
+
+class PendingEnrollment(Base):
+    """An unknown sender has been asked client-vs-team but hasn't answered yet."""
+
+    __tablename__ = "pending_enrollments"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    channel = Column(String, nullable=False)
+    channel_id = Column(String, nullable=False)
+    conversation_id = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index(
+            "ix_pending_enrollments_channel_channel_id",
+            "channel",
+            "channel_id",
+            unique=True,
+        ),
+    )
