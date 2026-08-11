@@ -173,14 +173,24 @@ def execute_command(cmd, principal, session) -> str:
         case CommandVerb.CONFIRM:
             if not cmd.args:
                 return "CONFIRM requires a nonce"
-            nonce = cmd.args[0]
-            return f"Confirmed action for {nonce}"
+            from cerebro.verify.executor import ChallengeRejected, confirm
+
+            try:
+                confirm(session, principal=principal, nonce=cmd.args[0])
+            except ChallengeRejected as exc:
+                return f"CONFIRM failed: {exc}"
+            return f"Confirmed action for {cmd.args[0]}"
 
         case CommandVerb.DENY:
             if not cmd.args:
                 return "DENY requires a nonce"
-            nonce = cmd.args[0]
-            return f"Denied action for {nonce}"
+            from cerebro.verify.executor import ChallengeRejected, deny
+
+            try:
+                deny(session, principal=principal, nonce=cmd.args[0])
+            except ChallengeRejected as exc:
+                return f"DENY failed: {exc}"
+            return f"Denied action for {cmd.args[0]}"
 
         case CommandVerb.ENROLL:
             return "Enrollment initiated"
