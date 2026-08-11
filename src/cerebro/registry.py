@@ -40,6 +40,7 @@ class ToolSpec:
         parameters: JSON-Schema-like parameter object.
         handler: Callable that executes the tool.
         allowed_populations: Populations permitted to see/invoke this tool.
+        tier: 1 runs immediately; >=2 requires CONFIRM before execution.
     """
 
     name: str
@@ -47,6 +48,7 @@ class ToolSpec:
     parameters: dict[str, Any]
     handler: Callable[..., Any]
     allowed_populations: frozenset[Population]
+    tier: int = 1
 
 
 def whoami(*, principal: Principal, **_: Any) -> dict[str, str]:

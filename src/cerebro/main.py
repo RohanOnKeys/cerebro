@@ -46,7 +46,7 @@ async def on_message(sender: str, channel: str, text: str) -> str:
         cmd = parse_command(text)
 
         if cmd:
-            return execute_command(cmd, principal, session)
+            return execute_command(cmd, principal, session, channel=channel)
 
         return handle_free_text(text, principal, session, channel)
 
@@ -133,7 +133,7 @@ def handle_free_text(text: str, principal, session, channel: str) -> str:
     return reply
 
 
-def execute_command(cmd, principal, session) -> str:
+def execute_command(cmd, principal, session, channel: str = "") -> str:
     """Execute a parsed command and return reply."""
     from cerebro.ingress.commands import CommandVerb
     from cerebro.membrane import crossings as crossings_service
@@ -173,14 +173,29 @@ def execute_command(cmd, principal, session) -> str:
         case CommandVerb.CONFIRM:
             if not cmd.args:
                 return "CONFIRM requires a nonce"
-            nonce = cmd.args[0]
-            return f"Confirmed action for {nonce}"
+            from cerebro.verify.executor import ChallengeRejected, confirm
+
+            try:
+                confirm(
+                    session,
+                    principal=principal,
+                    nonce=cmd.args[0],
+                    channel=channel,
+                )
+            except ChallengeRejected as exc:
+                return f"CONFIRM failed: {exc}"
+            return f"Confirmed action for {cmd.args[0]}"
 
         case CommandVerb.DENY:
             if not cmd.args:
                 return "DENY requires a nonce"
-            nonce = cmd.args[0]
-            return f"Denied action for {nonce}"
+            from cerebro.verify.executor import ChallengeRejected, deny
+
+            try:
+                deny(session, principal=principal, nonce=cmd.args[0])
+            except ChallengeRejected as exc:
+                return f"DENY failed: {exc}"
+            return f"Denied action for {cmd.args[0]}"
 
         case CommandVerb.ENROLL:
             return "Enrollment initiated"
