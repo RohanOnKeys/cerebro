@@ -319,6 +319,32 @@ def rsvp_meeting(
     }
 
 
+def list_meetings(
+    *,
+    session: Session,
+    principal: Principal,
+    **_: Any,
+) -> dict[str, Any]:
+    """List meetings the calling principal organizes or attends."""
+    items = meetings_service.list_meetings(session, principal_id=principal.id)
+    return {
+        "meetings": [meetings_service.serialize_meeting(meeting) for meeting in items],
+        "count": len(items),
+    }
+
+
+def meeting_status(
+    *,
+    session: Session,
+    meeting_id: str,
+    **_: Any,
+) -> dict[str, Any]:
+    """Check one meeting's details and every attendee's RSVP status."""
+    result = meetings_service.meeting_status(session, meeting_id=meeting_id)
+    if result is None:
+        return {"error": "meeting_not_found", "meeting_id": meeting_id}
+    return result
+
 
 def request_summary(
     *,
@@ -611,6 +637,29 @@ TOOLS: dict[str, ToolSpec] = {
             "additionalProperties": False,
         },
         handler=rsvp_meeting,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "list_meetings": ToolSpec(
+        name="list_meetings",
+        description="List meetings the caller organizes or attends.",
+        parameters={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+        handler=list_meetings,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "meeting_status": ToolSpec(
+        name="meeting_status",
+        description="Check one meeting's details and every attendee's RSVP status.",
+        parameters={
+            "type": "object",
+            "properties": {"meeting_id": {"type": "string"}},
+            "required": ["meeting_id"],
+            "additionalProperties": False,
+        },
+        handler=meeting_status,
         allowed_populations=_ALL_POPULATIONS,
     ),
     "request_summary": ToolSpec(
