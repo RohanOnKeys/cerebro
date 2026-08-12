@@ -54,6 +54,7 @@ Issues = "https://github.com/RohanOnKeys/cerebro/issues"
 
 [project.scripts]
 cerebro-gateway = "cerebro.gateway:run_gateway"
+cerebro-webhook = "cerebro.server:run_server"
 
 [project.optional-dependencies]
 dev = [

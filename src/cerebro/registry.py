@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from cerebro.db.models import Population, Principal
+from cerebro.db.models import NudgeKind, Population, Principal
 from cerebro.github import api as github_api
 from cerebro.github import app_auth as github_auth
 from cerebro.github import runs as ci_runs_service
@@ -17,6 +17,7 @@ from cerebro.membrane import crossings as crossings_service
 from cerebro.membrane import policy as policy_service
 from cerebro.membrane import redact as redact_service
 from cerebro.services import meetings as meetings_service
+from cerebro.services import nudges as nudges_service
 from cerebro.services import orders as orders_service
 from cerebro.services import summaries as summaries_service
 from cerebro.services import tasks as tasks_service
@@ -351,6 +352,25 @@ def meeting_status(
     return result
 
 
+def cancel_meeting(
+    *,
+    session: Session,
+    principal: Principal,
+    meeting_id: str,
+    **_: Any,
+) -> dict[str, Any]:
+    """Cancel a meeting the caller organizes; notifies every attendee."""
+    from cerebro.db.models import Meeting
+
+    meeting = session.query(Meeting).filter(Meeting.id == meeting_id).first()
+    if meeting is None:
+        return {"error": "meeting_not_found", "meeting_id": meeting_id}
+    if meeting.organizer_principal_id != principal.id:
+        return {"error": "not_organizer", "meeting_id": meeting_id}
+    cancelled = meetings_service.cancel_meeting(session, meeting=meeting)
+    return meetings_service.serialize_meeting(cancelled)
+
+
 def request_summary(
     *,
     session: Session,
@@ -433,6 +453,156 @@ def relay_to_population(
         "action": decision.action,
         "content": content,
         "crossing_id": crossing.id,
+    }
+
+
+def route_client_feedback(
+    *,
+    session: Session,
+    principal: Principal,
+    text: str,
+    task_number: int | None = None,
+    order_id: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Route client feedback to the task's assignee, or the org's leads if unassigned.
+
+    Delivery to an assignee (always dev/ops in practice) goes through the same
+    audited membrane crossing as relay_to_population. The lead fallback skips
+    that crossing and notifies directly instead, the same way block_task
+    already notifies leads: that path is unassigned-escalation between team
+    members, not content crossing out to a client, so there is nothing for
+    the membrane to gate (and no client->lead policy row is seeded for it).
+    """
+    from cerebro.db.models import Task
+
+    task: Task | None = None
+    if task_number is not None:
+        task = tasks_service.get_task_by_number(
+            session, org_id=principal.org_id, number=task_number
+        )
+        if task is None:
+            return {"error": "task_not_found", "number": task_number}
+    elif order_id is not None:
+        task = (
+            session.query(Task)
+            .filter(Task.org_id == principal.org_id, Task.order_id == order_id)
+            .order_by(Task.created_at.desc())
+            .first()
+        )
+
+    assignee = None
+    if task is not None and task.assignee_principal_id:
+        assignee = (
+            session.query(Principal).filter(Principal.id == task.assignee_principal_id).first()
+        )
+
+    label = f"task {task.number}" if task else "your account"
+
+    if assignee is not None:
+        decision = policy_service.evaluate_crossing(
+            session, source=principal.population, target=assignee.population
+        )
+        crossing = crossings_service.record_crossing(
+            session,
+            org_id=principal.org_id,
+            principal_id=principal.id,
+            source=principal.population,
+            target=assignee.population,
+            action=decision.action,
+            content_ref=task.id if task else None,
+        )
+        if decision.action == "deny":
+            return {
+                "error": "feedback_denied",
+                "principal_id": assignee.id,
+                "crossing_id": crossing.id,
+            }
+        content = text
+        if decision.action == "redact":
+            content = redact_service.redact_digest_text(content, decision.redact_fields)
+        nudges_service.create_nudge(
+            session,
+            org_id=principal.org_id,
+            principal_id=assignee.id,
+            order_id=task.order_id if task else order_id,
+            body=f"Client feedback on {label}: {content}",
+            kind=NudgeKind.CLIENT_FEEDBACK.value,
+        )
+        crossings_service.mark_crossing_sent(session, crossing.id)
+        return {
+            "task_number": task.number if task else None,
+            "routed_to": assignee.id,
+            "action": decision.action,
+            "crossing_id": crossing.id,
+        }
+
+    leads = (
+        session.query(Principal)
+        .filter(Principal.org_id == principal.org_id, Principal.population == Population.LEAD)
+        .all()
+    )
+    if not leads:
+        return {"error": "no_recipient_found"}
+    for lead in leads:
+        nudges_service.create_nudge(
+            session,
+            org_id=principal.org_id,
+            principal_id=lead.id,
+            order_id=task.order_id if task else order_id,
+            body=f"Client feedback on {label} (unassigned): {text}",
+            kind=NudgeKind.CLIENT_FEEDBACK.value,
+        )
+    return {
+        "task_number": task.number if task else None,
+        "routed_to": [lead.id for lead in leads],
+        "action": "escalated_to_leads",
+    }
+
+
+def post_incident_update(
+    *,
+    session: Session,
+    principal: Principal,
+    summary: str,
+    target_population: str = "lead",
+    severity: str = "info",
+    **_: Any,
+) -> dict[str, Any]:
+    """Broadcast an incident/status update to every principal in a team population.
+
+    Internal team-to-team, so this bypasses the membrane crossing system the
+    same way block_task's lead notification does, it is not content crossing
+    out to a client.
+    """
+    recipients = (
+        session.query(Principal)
+        .filter(
+            Principal.org_id == principal.org_id,
+            Principal.population == target_population,
+        )
+        .all()
+    )
+    if not recipients:
+        return {"error": "no_recipients", "target_population": target_population}
+
+    body = f"[{severity.upper()}] {principal.id}: {summary}"
+    nudge_ids = []
+    for recipient in recipients:
+        nudge = nudges_service.create_nudge(
+            session,
+            org_id=principal.org_id,
+            principal_id=recipient.id,
+            body=body,
+            kind=NudgeKind.INCIDENT_UPDATE.value,
+        )
+        nudge_ids.append(nudge.id)
+
+    return {
+        "target_population": target_population,
+        "notified": [recipient.id for recipient in recipients],
+        "nudge_ids": nudge_ids,
+        "severity": severity,
     }
 
 
@@ -799,6 +969,18 @@ TOOLS: dict[str, ToolSpec] = {
         handler=meeting_status,
         allowed_populations=_ALL_POPULATIONS,
     ),
+    "cancel_meeting": ToolSpec(
+        name="cancel_meeting",
+        description="Cancel a meeting you organize and notify every attendee.",
+        parameters={
+            "type": "object",
+            "properties": {"meeting_id": {"type": "string"}},
+            "required": ["meeting_id"],
+            "additionalProperties": False,
+        },
+        handler=cancel_meeting,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
     "request_summary": ToolSpec(
         name="request_summary",
         description="Open a summary request for a topic and notify the requester.",
@@ -844,6 +1026,48 @@ TOOLS: dict[str, ToolSpec] = {
         },
         handler=relay_to_population,
         allowed_populations=_ALL_POPULATIONS,
+    ),
+    "route_client_feedback": ToolSpec(
+        name="route_client_feedback",
+        description=(
+            "Route client feedback to the person actually in charge: the assignee of "
+            "the given task (or the order's most recent task), falling back to the "
+            "org's leads if nothing is assigned yet."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "task_number": {"type": "integer"},
+                "order_id": {"type": "string"},
+            },
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        handler=route_client_feedback,
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "post_incident_update": ToolSpec(
+        name="post_incident_update",
+        description=(
+            "Broadcast an incident or status update to every principal in a team "
+            "population (e.g. tell ops the staging db is down)."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string"},
+                "target_population": {
+                    "type": "string",
+                    "enum": ["dev", "ops", "lead", "admin"],
+                },
+                "severity": {"type": "string", "enum": ["info", "warning", "critical"]},
+            },
+            "required": ["summary"],
+            "additionalProperties": False,
+        },
+        handler=post_incident_update,
+        allowed_populations=_TEAM_POPULATIONS,
     ),
     "list_ci_runs": ToolSpec(
         name="list_ci_runs",

@@ -81,8 +81,11 @@ class NudgeKind(str, Enum):
     TASK_LADDER = "task_ladder"
     TASK_BLOCKED = "task_blocked"
     MEETING_REMINDER = "meeting_reminder"
+    MEETING_CANCELLED = "meeting_cancelled"
     SUMMARY_REQUEST = "summary_request"
     SUMMARY_CHASE = "summary_chase"
+    CLIENT_FEEDBACK = "client_feedback"
+    INCIDENT_UPDATE = "incident_update"
 
 
 class NudgeStatus(str, Enum):

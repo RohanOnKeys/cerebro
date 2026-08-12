@@ -101,6 +101,17 @@ Cerebro Core is a FastAPI service fronting an LLM intent classifier. Free text b
 
 **CI Action Executor** is the only surface that will not act on the first ask. It requires an explicit confirmation, then calls the GitHub REST API with `workflow_dispatch`, and records `run_id` and result in the GitHub Actions ledger.
 
+Every one of those surfaces is exposed to the model as a plain callable tool in `registry.py`, gated by population (client, ops, dev, lead, admin) and, for anything destructive, by a confirm-before-run tier. The full set as of this writing:
+
+- **Scheduling:** `schedule_meeting`, `rsvp_meeting`, `list_meetings`, `meeting_status`, `cancel_meeting`
+- **Orders and tasks:** `open_order`, `update_order_fields`, `order_status`, `list_orders`, `decompose_order`, `assign_task`, `ack_task`, `block_task`, `list_tasks`
+- **Summaries:** `request_summary`, `submit_summary`
+- **CI:** `list_ci_runs`, `explain_ci_failure`, `rerun_workflow` (confirm), `dispatch_workflow` (confirm), `cancel_run` (confirm)
+- **Cross-population routing:** `relay_to_population` for general redacted digests, `route_client_feedback` for a client's message about a specific task, both auditable through the Crossings ledger
+- **Team workflows:** `post_incident_update` broadcasts a status update (e.g. "staging db is down") to every principal in a target population, so the free-text example below ("tell the backend team the staging db is down") has a real tool behind it now
+
+`route_client_feedback` is what handles a client complaining about something specific: it looks up the task tied to the order (or a task number given directly), delivers the message to that task's assignee, the person actually in charge of it, and only falls back to broadcasting the org's leads if nothing is assigned yet. There is no separate "understand the client" tool; that part is the LLM's job in the cortex loop, the same way it decides between `schedule`/`notify`/`summary`/`ci action` for any other free-text message. Tools are what it reaches for once it has worked out what was meant.
+
 ### 5. Nothing important is fire and forget
 
 Background workers on Celery or RQ handle everything that has to happen later rather than now: escalation timers when a notification goes unanswered, OTP expiry, and asynchronous polling of CI status. Redis is the queue and the cache.
@@ -118,6 +129,20 @@ A dispatched workflow does not leave you refreshing a browser tab. The GitHub we
                                 webhook: completed / success
 "api deployed to staging, run 18442, 3m 12s"   <-  reply on the original channel
 ```
+
+**Running the webhook.** The webhook logic lives in `src/cerebro/github/webhook.py`, but that file only defines a route, it does not run a server on its own. `src/cerebro/server.py` is the small FastAPI app that mounts it and actually listens. Start it with `cerebro-webhook` (installed as a script by `pyproject.toml`) or plain `python -m cerebro.server`, then point GitHub at it.
+
+This is a normal, repo-level GitHub webhook, not a GitHub App webhook. The App credentials in `.env` (`GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY_B64`, `GITHUB_INSTALLATION_ID`) are only used to call the GitHub REST API (rerunning a workflow, opening an issue). The webhook itself is registered separately, per repo, in that repo's own **Settings -> Webhooks -> Add webhook**:
+
+- **Payload URL:** `https://<your-host>/webhooks/github` (use a tunnel like `cloudflared` or `ngrok` for local testing, since GitHub needs a public URL)
+- **Content type:** `application/json`
+- **Secret:** the same value as `GITHUB_WEBHOOK_SECRET` in `.env`
+- **Events:** just "Workflow runs" is enough; anything else gets ignored and returns `{"handled": false}`
+- **SSL verification:** on
+
+Once that is saved, every `workflow_run` event GitHub sends gets signature-checked (`HMAC-SHA256`, constant-time compare), normalized into a `CIEvent`, and handed to `handle_ci_event`, which is what runs the fingerprinting, flake budget, and task-blocking logic described above.
+
+**Testing it against a real repo.** `d:\cerebro-ci-testbed` is a throwaway repo built for exactly this: one workflow that can be made to pass, fail, hang (for `cancel_run`), or fail on a `task-<N>` branch (for the task-blocking path) on demand. Its own README covers pushing it to GitHub and wiring it up; its local `test-app.md` has the actual test recipes for every CI tool.
 
 ### 7. Five ledgers, kept apart
 
