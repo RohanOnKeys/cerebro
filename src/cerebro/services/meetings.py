@@ -122,6 +122,25 @@ def schedule_meeting(
     return meeting
 
 
+def cancel_meeting(session: Session, *, meeting: Meeting) -> Meeting:
+    """Cancel a meeting and notify every attendee."""
+    meeting.status = MeetingStatus.CANCELLED.value
+    session.flush()
+    attendees = (
+        session.query(MeetingAttendee).filter(MeetingAttendee.meeting_id == meeting.id).all()
+    )
+    for attendee in attendees:
+        nudges_service.create_nudge(
+            session,
+            org_id=meeting.org_id,
+            principal_id=attendee.principal_id,
+            body=f"'{meeting.title}' has been cancelled.",
+            kind=NudgeKind.MEETING_CANCELLED.value,
+        )
+    session.commit()
+    return meeting
+
+
 def rsvp(
     session: Session, *, meeting_id: str, principal_id: str, status: str
 ) -> MeetingAttendee | None:
