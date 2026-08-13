@@ -86,6 +86,8 @@ class NudgeKind(str, Enum):
     SUMMARY_CHASE = "summary_chase"
     CLIENT_FEEDBACK = "client_feedback"
     INCIDENT_UPDATE = "incident_update"
+    ROLE_CLAIM_PENDING = "role_claim_pending"
+    ROLE_CLAIM_RESOLVED = "role_claim_resolved"
 
 
 class NudgeStatus(str, Enum):
@@ -97,6 +99,13 @@ class NudgeStatus(str, Enum):
 class ApprovalState(str, Enum):
     PENDING = "pending"
     CONFIRMED = "confirmed"
+    DENIED = "denied"
+    EXPIRED = "expired"
+
+
+class RoleClaimStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
     DENIED = "denied"
     EXPIRED = "expired"
 
@@ -281,6 +290,9 @@ class Meeting(Base):
     starts_at = Column(DateTime, nullable=False)
     duration_minutes = Column(Integer, nullable=False, default=30)
     status = Column(String, nullable=False, default=MeetingStatus.SCHEDULED.value)
+    provider = Column(String, nullable=False, default="")
+    join_url = Column(String)
+    external_event_id = Column(String)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     attendees = relationship("MeetingAttendee", back_populates="meeting")
@@ -501,4 +513,28 @@ class CiFailure(Base):
     __table_args__ = (
         Index("ix_ci_failures_org_fingerprint", "org_id", "fingerprint", unique=True),
         Index("ix_ci_failures_org_id", "org_id"),
+    )
+
+
+class RoleClaim(Base):
+    """A pending DEV/LEAD/ADMIN claim awaiting approval from an existing peer."""
+
+    __tablename__ = "role_claims"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    claimant_principal_id = Column(String, ForeignKey("principals.id"), nullable=False)
+    requested_population = Column(String, nullable=False)
+    approver_principal_id = Column(String, ForeignKey("principals.id"))
+    nonce = Column(String, nullable=False)
+    status = Column(String, nullable=False, default=RoleClaimStatus.PENDING.value)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    resolved_at = Column(DateTime)
+
+    __table_args__ = (
+        Index("ix_role_claims_nonce", "nonce", unique=True),
+        Index("ix_role_claims_status_expires_at", "status", "expires_at"),
+        Index("ix_role_claims_org_id", "org_id"),
+        Index("ix_role_claims_claimant_principal_id", "claimant_principal_id"),
     )

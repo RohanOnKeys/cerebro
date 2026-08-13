@@ -4,7 +4,14 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from cerebro.db.models import ChannelBinding, Org, PendingEnrollment, Population, Principal
+from cerebro.db.models import (
+    ChannelBinding,
+    Org,
+    PendingEnrollment,
+    Population,
+    Principal,
+    RoleClaim,
+)
 
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _TEAM_ROLE_ALIASES: dict[str, Population] = {
@@ -13,6 +20,10 @@ _TEAM_ROLE_ALIASES: dict[str, Population] = {
     "LEAD": Population.LEAD,
     "ADMIN": Population.ADMIN,
 }
+
+# DEV/LEAD/ADMIN claims need an existing peer's sign-off before they take
+# effect (verify/role_claims.py); OPS is the safe, immediate default.
+GATED_POPULATIONS = frozenset({Population.DEV, Population.LEAD, Population.ADMIN})
 ENROLLMENT_PROMPT = (
     "Welcome! Are you a CLIENT or on the TEAM? Reply with your answer and your "
     "email so your identity carries across every channel you message us on, "
@@ -157,12 +168,46 @@ def find_or_create_principal_by_email(
     return principal
 
 
+def apply_enrollment_population(
+    session: Session, principal: Principal, requested: Population
+) -> RoleClaim | None:
+    """Open a role claim for a gated population instead of granting it outright.
+
+    No-op (returns None) for CLIENT/OPS, or when the principal already holds
+    `requested` (an existing DEV re-answering "TEAM DEV" shouldn't re-queue a
+    claim, or get reverted to OPS while one is pending).
+    """
+    if requested not in GATED_POPULATIONS or principal.population == requested:
+        return None
+    from cerebro.verify import role_claims as role_claims_service
+
+    claim = role_claims_service.mint_role_claim(
+        session, claimant=principal, requested_population=requested
+    )
+    role_claims_service.notify_eligible_approvers(session, claim)
+    return claim
+
+
 def complete_enrollment(
     session: Session, *, pending: PendingEnrollment, population: Population, email: str
-) -> tuple[Principal, ChannelBinding]:
-    """Resolve a pending enrollment into a (principal, binding) pair and clear it."""
+) -> tuple[Principal, ChannelBinding, RoleClaim | None]:
+    """Resolve a pending enrollment into (principal, binding, pending_claim) and clear it.
+
+    Brand-new principals land at OPS when `population` is gated (DEV/LEAD/ADMIN);
+    the requested population only takes effect once an existing peer approves it
+    via apply_enrollment_population.
+    """
+    is_new = (
+        session.query(Principal)
+        .filter(Principal.org_id == pending.org_id, Principal.email == email)
+        .first()
+        is None
+    )
+    seed_population = (
+        Population.OPS if is_new and population in GATED_POPULATIONS else population
+    )
     principal = find_or_create_principal_by_email(
-        session, org_id=pending.org_id, population=population, email=email
+        session, org_id=pending.org_id, population=seed_population, email=email
     )
     binding = ChannelBinding(
         id=str(uuid.uuid4()),
@@ -176,4 +221,6 @@ def complete_enrollment(
     session.add(binding)
     session.delete(pending)
     session.commit()
-    return principal, binding
+
+    claim = apply_enrollment_population(session, principal, population)
+    return principal, binding, claim

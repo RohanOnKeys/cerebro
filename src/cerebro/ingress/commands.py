@@ -8,6 +8,8 @@ class CommandVerb(str, Enum):
     BLOCKED = "BLOCKED"
     CONFIRM = "CONFIRM"
     DENY = "DENY"
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
     WHOAMI = "WHOAMI"
     ENROLL = "ENROLL"
     RERUN = "RERUN"

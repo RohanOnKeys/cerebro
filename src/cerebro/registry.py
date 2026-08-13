@@ -13,6 +13,8 @@ from cerebro.github import api as github_api
 from cerebro.github import app_auth as github_auth
 from cerebro.github import runs as ci_runs_service
 from cerebro.ingress.enrollment import enroll_unknown_sender
+from cerebro.jira import api as jira_api
+from cerebro.jira import auth as jira_auth
 from cerebro.membrane import crossings as crossings_service
 from cerebro.membrane import policy as policy_service
 from cerebro.membrane import redact as redact_service
@@ -738,6 +740,73 @@ def cancel_run(
     return {"status": "cancel_requested", "owner": owner, "repo": repo, "run_id": run_id}
 
 
+def _jira_api_from_settings() -> jira_api.JiraAPI:
+    """Build a JiraAPI using the shared API-token credentials from settings."""
+    auth = jira_auth.JiraAuth()
+    return jira_api.JiraAPI(auth)
+
+
+def create_jira_ticket(
+    *,
+    session: Session,
+    principal: Principal,
+    summary: str,
+    description: str = "",
+    project_key: str = "",
+    issue_type: str = "Task",
+    labels: list[str] | None = None,
+    api: jira_api.JiraAPI | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Create a Jira ticket, falling back to the org's default project key."""
+    from cerebro.config import settings
+
+    key = project_key or settings.jira_default_project_key
+    if not key:
+        return {"error": "missing_project_key"}
+    client = api or _jira_api_from_settings()
+    try:
+        issue = client.create_issue(
+            key,
+            summary=summary,
+            description=description,
+            issue_type=issue_type,
+            labels=labels,
+        )
+    except (jira_auth.JiraAuthError, jira_api.JiraAPIError) as exc:
+        return {"error": "jira_error", "detail": str(exc)}
+    issue_key = str(issue.get("key") or "")
+    return {
+        "issue_key": issue_key,
+        "issue_url": f"{client.auth.base_url}/browse/{issue_key}",
+        "id": issue.get("id"),
+        "created_by": principal.id,
+    }
+
+
+def jira_issue_status(
+    *,
+    session: Session,
+    principal: Principal,
+    issue_key: str,
+    api: jira_api.JiraAPI | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Fetch a Jira issue's current status/summary."""
+    client = api or _jira_api_from_settings()
+    try:
+        issue = client.get_issue(issue_key)
+    except (jira_auth.JiraAuthError, jira_api.JiraAPIError) as exc:
+        return {"error": "jira_error", "detail": str(exc)}
+    fields = issue.get("fields") or {}
+    status = (fields.get("status") or {}).get("name", "")
+    return {
+        "issue_key": issue_key,
+        "summary": fields.get("summary", ""),
+        "status": status,
+    }
+
+
 TOOLS: dict[str, ToolSpec] = {
     "whoami": ToolSpec(
         name="whoami",
@@ -1157,6 +1226,41 @@ TOOLS: dict[str, ToolSpec] = {
         handler=cancel_run,
         allowed_populations=_TEAM_POPULATIONS,
         tier=2,
+    ),
+    "create_jira_ticket": ToolSpec(
+        name="create_jira_ticket",
+        description=(
+            "Create a Jira ticket. Falls back to the org's default project key "
+            "when project_key is omitted."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string"},
+                "description": {"type": "string"},
+                "project_key": {"type": "string"},
+                "issue_type": {"type": "string"},
+                "labels": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["summary"],
+            "additionalProperties": False,
+        },
+        handler=create_jira_ticket,
+        allowed_populations=_TEAM_POPULATIONS,
+        tier=1,
+    ),
+    "jira_issue_status": ToolSpec(
+        name="jira_issue_status",
+        description="Fetch a Jira issue's current status and summary.",
+        parameters={
+            "type": "object",
+            "properties": {"issue_key": {"type": "string"}},
+            "required": ["issue_key"],
+            "additionalProperties": False,
+        },
+        handler=jira_issue_status,
+        allowed_populations=_TEAM_POPULATIONS,
+        tier=1,
     ),
 }
 

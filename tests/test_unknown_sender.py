@@ -53,12 +53,24 @@ def test_unparseable_answer_reprompts_without_enrolling(db_session):
 
 def test_resolve_principal_works_after_enrollment_completes(db_session):
     handle_unknown_sender(db_session, "telegram", "tg_1", "hi there")
-    handle_unknown_sender(db_session, "telegram", "tg_1", "DEV jane@example.com")
+    handle_unknown_sender(db_session, "telegram", "tg_1", "CLIENT jane@example.com")
 
     principal = resolve_principal(db_session, "telegram", "tg_1")
 
     assert principal is not None
-    assert principal.population.value == "dev"
+    assert principal.population.value == "client"
+
+
+def test_dev_claim_lands_at_ops_pending_approval(db_session):
+    """A gated role claim (DEV/LEAD/ADMIN) doesn't take effect until approved."""
+    handle_unknown_sender(db_session, "telegram", "tg_1", "hi there")
+
+    reply = handle_unknown_sender(db_session, "telegram", "tg_1", "DEV jane@example.com")
+
+    assert "pending approval" in reply.lower()
+    principal = resolve_principal(db_session, "telegram", "tg_1")
+    assert principal is not None
+    assert principal.population.value == "ops"
 
 
 def test_identity_persists_across_channels_via_matching_email(db_session):

@@ -90,9 +90,15 @@ def handle_unknown_sender(session, channel: str, channel_id: str, text: str) -> 
         return f"Sorry, I didn't catch that. {ENROLLMENT_PROMPT}"
 
     population, email = answer
-    principal, _binding = complete_enrollment(
+    principal, _binding, claim = complete_enrollment(
         session, pending=pending, population=population, email=email
     )
+    if claim is not None:
+        return (
+            f"You've been enrolled as {principal.population.value} for now. "
+            f"Your {population.value} claim ({claim.nonce}) is pending approval "
+            "from an existing teammate at that level or above."
+        )
     return f"Welcome! You've been enrolled as {principal.population.value} ({email})."
 
 
@@ -196,6 +202,28 @@ def execute_command(cmd, principal, session, channel: str = "") -> str:
             except ChallengeRejected as exc:
                 return f"DENY failed: {exc}"
             return f"Denied action for {cmd.args[0]}"
+
+        case CommandVerb.APPROVE:
+            if not cmd.args:
+                return "APPROVE requires a nonce"
+            from cerebro.verify.role_claims import RoleClaimRejected, approve_role_claim
+
+            try:
+                result = approve_role_claim(session, approver=principal, nonce=cmd.args[0])
+            except RoleClaimRejected as exc:
+                return f"APPROVE failed: {exc}"
+            return f"Approved {result['claimant_principal_id']} as {result['population']}"
+
+        case CommandVerb.REJECT:
+            if not cmd.args:
+                return "REJECT requires a nonce"
+            from cerebro.verify.role_claims import RoleClaimRejected, deny_role_claim
+
+            try:
+                result = deny_role_claim(session, approver=principal, nonce=cmd.args[0])
+            except RoleClaimRejected as exc:
+                return f"REJECT failed: {exc}"
+            return f"Denied role claim for {result['claimant_principal_id']}"
 
         case CommandVerb.ENROLL:
             return "Enrollment initiated"
