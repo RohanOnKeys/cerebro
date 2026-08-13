@@ -45,6 +45,8 @@ def serialize_meeting(meeting: Meeting) -> dict[str, Any]:
         "starts_at": meeting.starts_at.isoformat() if meeting.starts_at else "",
         "duration_minutes": meeting.duration_minutes,
         "status": meeting.status,
+        "provider": meeting.provider or "",
+        "join_url": meeting.join_url or "",
     }
 
 
@@ -91,8 +93,16 @@ def schedule_meeting(
     starts_at: datetime,
     duration_minutes: int = 30,
     attendee_principal_ids: Sequence[str] = (),
+    provider: str = "",
+    join_url: str | None = None,
+    external_event_id: str | None = None,
 ) -> Meeting:
-    """Create a meeting and its attendee rows (organizer included, RSVP pending)."""
+    """Create a meeting and its attendee rows (organizer included, RSVP pending).
+
+    provider/join_url/external_event_id are set in this one call, not
+    patched on afterward, so a meeting row is never left half-written if
+    an external Meet/Zoom call happens before this and fails.
+    """
     meeting = Meeting(
         id=str(uuid.uuid4()),
         org_id=org_id,
@@ -101,6 +111,9 @@ def schedule_meeting(
         starts_at=starts_at,
         duration_minutes=duration_minutes,
         status=MeetingStatus.SCHEDULED.value,
+        provider=provider,
+        join_url=join_url,
+        external_event_id=external_event_id,
         created_at=datetime.now(UTC),
     )
     session.add(meeting)
