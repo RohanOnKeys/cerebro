@@ -171,14 +171,14 @@ def test_complete_enrollment_second_channel_binds_to_same_principal(db_session, 
     telegram_pending = start_enrollment(
         db_session, org_id="org_1", channel="telegram", channel_id="tg_1", conversation_id="c1"
     )
-    telegram_principal, telegram_binding = complete_enrollment(
+    telegram_principal, telegram_binding, _claim = complete_enrollment(
         db_session, pending=telegram_pending, population=Population.CLIENT, email="jane@example.com"
     )
 
     discord_pending = start_enrollment(
         db_session, org_id="org_1", channel="discord", channel_id="dc_1", conversation_id="c2"
     )
-    discord_principal, discord_binding = complete_enrollment(
+    discord_principal, discord_binding, _claim = complete_enrollment(
         db_session, pending=discord_pending, population=Population.CLIENT, email="jane@example.com"
     )
 
