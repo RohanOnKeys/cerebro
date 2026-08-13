@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     github_default_org_id: str = "default_org"
     ci_flake_budget: int = 3
     ci_flake_window_hours: int = 24
+    jira_base_url: str = ""
+    jira_email: str = ""
+    jira_api_token: str = ""
+    jira_default_project_key: str = ""
     model_cortex: str = "Qwen/Qwen3-32B"
     featherless_api_key: str = ""
     featherless_base_url: str = "https://api.featherless.ai/v1"
