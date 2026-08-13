@@ -7,7 +7,6 @@ class ChannelType(str, Enum):
     DISCORD = "discord"
     TELEGRAM = "telegram"
     EMAIL = "email"
-    WHATSAPP = "whatsapp"
 
 
 @dataclass
@@ -69,18 +68,6 @@ def install_email(name: str, avatar: str | None = None, emoji: str = "📧") -> 
         color="#666666",
     )
     _channels["email"] = config
-
-
-def install_whatsapp(name: str, avatar: str | None = None, emoji: str = "💬") -> None:
-    """Install WhatsApp channel with branding."""
-    config = ChannelConfig(
-        channel_type=ChannelType.WHATSAPP,
-        name=name,
-        avatar=avatar,
-        emoji=emoji,
-        color="#25D366",
-    )
-    _channels["whatsapp"] = config
 
 
 def update_branding(channel_type: str, name: str | None = None, avatar: str | None = None, emoji: str | None = None) -> None:

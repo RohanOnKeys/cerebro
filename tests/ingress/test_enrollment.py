@@ -55,11 +55,11 @@ def test_enroll_unknown_sender_telegram(db_session, test_org):
 def test_enroll_unknown_sender_creates_row_with_conversation_id(db_session, test_org):
     """Enroll should create a channel_bindings row with conversation_id."""
     principal, binding = enroll_unknown_sender(
-        db_session, "org_1", "whatsapp", "5551234567", "conv_xyz789"
+        db_session, "org_1", "discord", "5551234567", "conv_xyz789"
     )
 
     assert binding.conversation_id == "conv_xyz789"
-    assert binding.channel == "whatsapp"
+    assert binding.channel == "discord"
 
 
 def test_enroll_multiple_senders(db_session, test_org):

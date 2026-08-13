@@ -5,7 +5,6 @@ from cerebro.services.channels import (
     install_discord,
     install_telegram,
     install_email,
-    install_whatsapp,
     update_branding,
     get_channel_config,
     list_channels,
@@ -59,15 +58,6 @@ def test_install_email():
     config = get_channel_config("email")
     assert config is not None
     assert config.name == "cerebro-email"
-
-
-def test_install_whatsapp():
-    """Install WhatsApp channel."""
-    install_whatsapp("cerebro-whatsapp")
-
-    config = get_channel_config("whatsapp")
-    assert config is not None
-    assert config.name == "cerebro-whatsapp"
 
 
 def test_update_branding():
