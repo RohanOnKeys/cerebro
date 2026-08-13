@@ -6,7 +6,7 @@
 
 Cerebro is an office workspace assistant, a CI monitor, and a multichannel agent, running as one identity across every channel your company already lives in.
 
-You do not open a new app. You do not learn a new interface. You message Cerebro on WhatsApp, Telegram, Discord, Slack, or Email, and the office answers back.
+You do not open a new app. You do not learn a new interface. You message Cerebro on Telegram, Discord, Slack, or Email, and the office answers back.
 
 **walk out of your prison, work anywhere**
 
@@ -27,7 +27,7 @@ You do not open a new app. You do not learn a new interface. You message Cerebro
 
 Cerebro sits between your people and your systems. It verifies who is talking, works out what they want, and then does it: books the meeting, chases the person who has not replied, remembers what was decided, and fires the deploy.
 
-**Multichannel by default.** One agent, five surfaces. WhatsApp, Telegram, Discord, Slack, and Email all reach the same brain, share the same memory, and speak with the same voice. Your ops lead lives in Slack, your field team lives on WhatsApp, and the client only ever replies to Email. Cerebro does not care.
+**Multichannel by default.** One agent, four surfaces. Telegram, Discord, Slack, and Email all reach the same brain, share the same memory, and speak with the same voice. Your ops lead lives in Slack, your field team lives on Discord, and the client only ever replies to Email. Cerebro does not care.
 
 ![Anywhere](assets/anywhere.jpg)
 
@@ -59,11 +59,10 @@ Verified identity, then agent core, then four surfaces, then isolated ledgers, t
 
 ### 1. One process, every channel
 
-The Caspian SDK is the channel layer. It normalises WhatsApp, Telegram, Discord, Slack, and Email into a single `on_message` handler, and runs every channel bot concurrently inside one `client.listen()` process. Adding a surface does not mean adding a service.
+The Caspian SDK is the channel layer. It normalises Telegram, Discord, Slack, and Email into a single `on_message` handler, and runs every channel bot concurrently inside one `client.listen()` process. Adding a surface does not mean adding a service.
 
 ```bash
-# one identity, five doors into it
-whatsapp  ->
+# one identity, four doors into it
 telegram  ->
 discord   ->  caspian sdk  ->  on_message(sender, channel, text)
 slack     ->
@@ -158,15 +157,17 @@ summaries db  ->  by meeting_id
 actions db    ->  run_id, result
 ```
 
-### 8. A dashboard that is genuinely separate
+### 8. Two dashboards, genuinely separate from the core and from each other
 
-The Cerebro Dashboard runs as its own server and never touches the databases directly. It talks to the core over an Admin and Read API on HTTPS, and nothing else. From it you get live channel status, a ledger viewer, CI run history, and the allowlist manager that decides who is allowed to exist in the system at all.
+The **team/admin site** runs as its own server and never touches the databases directly. It talks to the core over an Admin and Read API on HTTPS, and nothing else. From it you get live channel status, a ledger viewer, CI run history, and the allowlist manager that decides who is allowed to exist in the system at all.
+
+The **client site** is a different, much smaller thing: a static page with no backend of its own, whose only job is pointing a client at Telegram or Email to actually reach Cerebro. It is not a channel, it is a signpost to the channels that are.
 
 ---
 
 ## Frameworks and tools
 
-**Caspian SDK** is the channel layer, one `on_message` handler for all five surfaces.
+**Caspian SDK** is the channel layer, one `on_message` handler for all four surfaces.
 
 **OTP Gateway** verifies the sender and issues the short lived JWT that carries authority.
 
