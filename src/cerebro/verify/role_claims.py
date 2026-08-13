@@ -16,7 +16,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from cerebro.db.models import NudgeKind, Nudge, Population, Principal, RoleClaim, RoleClaimStatus
+from cerebro.db.models import Nudge, NudgeKind, Population, Principal, RoleClaim, RoleClaimStatus
 from cerebro.services import nudges as nudges_service
 from cerebro.verify.challenge import mint_nonce
 

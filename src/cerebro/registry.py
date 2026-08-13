@@ -8,7 +8,10 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from cerebro.config import settings
 from cerebro.db.models import NudgeKind, Population, Principal
+from cerebro.gcal import api as gcal_api
+from cerebro.gcal import auth as gcal_auth
 from cerebro.github import api as github_api
 from cerebro.github import app_auth as github_auth
 from cerebro.github import runs as ci_runs_service
@@ -23,6 +26,8 @@ from cerebro.services import nudges as nudges_service
 from cerebro.services import orders as orders_service
 from cerebro.services import summaries as summaries_service
 from cerebro.services import tasks as tasks_service
+from cerebro.zoom import api as zoom_api
+from cerebro.zoom import auth as zoom_auth
 
 # Internal populations that may run team/ops tools. CLIENT is excluded.
 _TEAM_POPULATIONS = frozenset(
@@ -275,6 +280,30 @@ def list_tasks(
 
 
 
+def _gcal_api_from_settings() -> gcal_api.GoogleCalendarAPI:
+    """Build a GoogleCalendarAPI using the shared service-account credentials."""
+    auth = gcal_auth.GoogleCalendarAuth()
+    return gcal_api.GoogleCalendarAPI(auth)
+
+
+def _zoom_api_from_settings() -> zoom_api.ZoomAPI:
+    """Build a ZoomAPI using the shared Server-to-Server credentials."""
+    auth = zoom_auth.ZoomAuth()
+    return zoom_api.ZoomAPI(auth)
+
+
+def _attendee_emails(session: Session, principal_ids: list[str]) -> list[str]:
+    """Resolve principal ids to their emails, dropping any without one."""
+    if not principal_ids:
+        return []
+    rows = (
+        session.query(Principal.email)
+        .filter(Principal.id.in_(principal_ids), Principal.email.isnot(None))
+        .all()
+    )
+    return [email for (email,) in rows if email]
+
+
 def schedule_meeting(
     *,
     session: Session,
@@ -283,17 +312,81 @@ def schedule_meeting(
     attendee_principal_ids: list[str] | None = None,
     duration_minutes: int = 30,
     starts_at: str | None = None,
+    provider: str = "none",
+    gcal_client: gcal_api.GoogleCalendarAPI | None = None,
+    zoom_client: zoom_api.ZoomAPI | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Schedule a meeting, finding the earliest free slot when starts_at is omitted."""
+    """Schedule a meeting, finding the earliest free slot when starts_at is omitted.
+
+    provider="meet"/"zoom" also creates a real conferencing link and, only
+    for "meet", checks real availability via Google's free/busy instead of
+    the historical busy=[] (Zoom has no calendar concept to query, and
+    "none" never had one). The external call happens before the internal
+    row is written, so a failed external call never leaves a dead-link
+    meeting behind.
+    """
     import datetime as _dt
+
+    attendee_ids = attendee_principal_ids or []
 
     if starts_at:
         parsed_starts_at = _dt.datetime.fromisoformat(starts_at)
+    elif provider == "meet":
+        client = gcal_client or _gcal_api_from_settings()
+        window_start = _dt.datetime.now(_dt.UTC)
+        try:
+            busy = client.free_busy(
+                settings.gcal_calendar_id,
+                _attendee_emails(session, [principal.id, *attendee_ids]),
+                time_min=window_start,
+                time_max=window_start + _dt.timedelta(days=7),
+            )
+        except (gcal_auth.GoogleCalendarAuthError, gcal_api.GoogleCalendarAPIError) as exc:
+            return {"error": "gcal_error", "detail": str(exc)}
+        parsed_starts_at = meetings_service.find_slot(
+            busy, duration_minutes=duration_minutes, after=window_start
+        )
     else:
         parsed_starts_at = meetings_service.find_slot(
             [], duration_minutes=duration_minutes, after=_dt.datetime.now(_dt.UTC)
         )
+
+    join_url: str | None = None
+    external_event_id: str | None = None
+    if provider == "meet":
+        client = gcal_client or _gcal_api_from_settings()
+        ends_at = parsed_starts_at + _dt.timedelta(minutes=duration_minutes)
+        try:
+            event = client.create_event(
+                settings.gcal_calendar_id,
+                summary=title,
+                start=parsed_starts_at,
+                end=ends_at,
+                attendee_emails=_attendee_emails(session, attendee_ids),
+            )
+        except (gcal_auth.GoogleCalendarAuthError, gcal_api.GoogleCalendarAPIError) as exc:
+            return {"error": "gcal_error", "detail": str(exc)}
+        join_url = event["meet_link"]
+        external_event_id = str(event["event_id"]) if event["event_id"] else None
+    elif provider == "zoom":
+        if not settings.zoom_user_id:
+            return {"error": "missing_zoom_user_id"}
+        client = zoom_client or _zoom_api_from_settings()
+        try:
+            zoom_meeting = client.create_meeting(
+                settings.zoom_user_id,
+                topic=title,
+                start_time=parsed_starts_at,
+                duration_minutes=duration_minutes,
+            )
+        except (zoom_auth.ZoomAuthError, zoom_api.ZoomAPIError) as exc:
+            return {"error": "zoom_error", "detail": str(exc)}
+        join_url = zoom_meeting["join_url"]
+        external_event_id = (
+            str(zoom_meeting["meeting_id"]) if zoom_meeting["meeting_id"] else None
+        )
+
     meeting = meetings_service.schedule_meeting(
         session,
         org_id=principal.org_id,
@@ -301,7 +394,10 @@ def schedule_meeting(
         title=title,
         starts_at=parsed_starts_at,
         duration_minutes=duration_minutes,
-        attendee_principal_ids=attendee_principal_ids or [],
+        attendee_principal_ids=attendee_ids,
+        provider=provider if provider != "none" else "",
+        join_url=join_url,
+        external_event_id=external_event_id,
     )
     return meetings_service.serialize_meeting(meeting)
 
@@ -359,9 +455,16 @@ def cancel_meeting(
     session: Session,
     principal: Principal,
     meeting_id: str,
+    gcal_client: gcal_api.GoogleCalendarAPI | None = None,
+    zoom_client: zoom_api.ZoomAPI | None = None,
     **_: Any,
 ) -> dict[str, Any]:
-    """Cancel a meeting the caller organizes; notifies every attendee."""
+    """Cancel a meeting the caller organizes; notifies every attendee.
+
+    For a real provider, the external event/meeting is cancelled first; on
+    failure the internal row is left untouched (retryable) rather than
+    cancelling internally and orphaning the real Meet/Zoom booking.
+    """
     from cerebro.db.models import Meeting
 
     meeting = session.query(Meeting).filter(Meeting.id == meeting_id).first()
@@ -369,6 +472,20 @@ def cancel_meeting(
         return {"error": "meeting_not_found", "meeting_id": meeting_id}
     if meeting.organizer_principal_id != principal.id:
         return {"error": "not_organizer", "meeting_id": meeting_id}
+
+    if meeting.provider == "meet" and meeting.external_event_id:
+        client = gcal_client or _gcal_api_from_settings()
+        try:
+            client.delete_event(settings.gcal_calendar_id, meeting.external_event_id)
+        except (gcal_auth.GoogleCalendarAuthError, gcal_api.GoogleCalendarAPIError) as exc:
+            return {"error": "gcal_error", "detail": str(exc)}
+    elif meeting.provider == "zoom" and meeting.external_event_id:
+        client = zoom_client or _zoom_api_from_settings()
+        try:
+            client.delete_meeting(meeting.external_event_id)
+        except (zoom_auth.ZoomAuthError, zoom_api.ZoomAPIError) as exc:
+            return {"error": "zoom_error", "detail": str(exc)}
+
     cancelled = meetings_service.cancel_meeting(session, meeting=meeting)
     return meetings_service.serialize_meeting(cancelled)
 
@@ -759,8 +876,6 @@ def create_jira_ticket(
     **_: Any,
 ) -> dict[str, Any]:
     """Create a Jira ticket, falling back to the org's default project key."""
-    from cerebro.config import settings
-
     key = project_key or settings.jira_default_project_key
     if not key:
         return {"error": "missing_project_key"}
@@ -984,7 +1099,8 @@ TOOLS: dict[str, ToolSpec] = {
         name="schedule_meeting",
         description=(
             "Schedule a meeting with attendees; finds the earliest free slot when "
-            "starts_at is omitted."
+            "starts_at is omitted. provider=meet/zoom also creates a real "
+            "conferencing link (meet additionally checks real availability)."
         ),
         parameters={
             "type": "object",
@@ -993,6 +1109,7 @@ TOOLS: dict[str, ToolSpec] = {
                 "attendee_principal_ids": {"type": "array", "items": {"type": "string"}},
                 "duration_minutes": {"type": "integer"},
                 "starts_at": {"type": "string"},
+                "provider": {"type": "string", "enum": ["none", "meet", "zoom"]},
             },
             "required": ["title"],
             "additionalProperties": False,
