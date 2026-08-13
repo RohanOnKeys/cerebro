@@ -18,8 +18,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Root-only: bare "lib/" also matched cerebro-web/src/lib and blocked adds.
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -65,4 +66,3 @@ cerebro-web/README.md
 
 # Docker
 postgres_data/
-
