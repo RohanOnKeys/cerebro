@@ -57,5 +57,12 @@ htmlcov/
 *.pem
 *.key
 
+# cerebro-web (Next.js)
+cerebro-web/node_modules/
+cerebro-web/.next/
+cerebro-web/out/
+cerebro-web/README.md
+
 # Docker
 postgres_data/
+
