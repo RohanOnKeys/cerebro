@@ -133,6 +133,7 @@ class Principal(Base):
     org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
     population = Column(SQLEnum(Population), nullable=False)
     email = Column(String)
+    display_name = Column(String)
     skills_json = Column(String, nullable=False, default="[]")
     wip_cap = Column(Integer, nullable=False, default=3)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
