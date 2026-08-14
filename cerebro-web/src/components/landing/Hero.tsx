@@ -1,28 +1,26 @@
-import { NeuralNetwork3D } from "@/components/landing/NeuralNetwork3D";
+import { BrainCanvas } from "@/components/landing/BrainCanvas";
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden border-b border-cerebro-border">
-      <div className="pointer-events-none absolute inset-0 opacity-90">
-        <NeuralNetwork3D />
-      </div>
+    <section className="relative flex min-h-screen items-end overflow-hidden">
+      <BrainCanvas />
+      <div
+        className="pointer-events-none absolute inset-0 z-[1] bg-[linear-gradient(90deg,rgba(28,30,34,0.82)_0%,rgba(28,30,34,0.5)_42%,rgba(28,30,34,0)_68%)]"
+        aria-hidden="true"
+      />
 
-      <div className="relative mx-auto flex max-w-6xl flex-col items-center px-6 pb-28 pt-28 text-center sm:pt-36">
-        <h1 className="text-metallic font-display text-6xl font-semibold leading-none tracking-tight sm:text-7xl">
-          Cerebro
-          <span className="text-cerebro-accent-lightest">: Agency Orchestration</span>
-        </h1>
-
-        <p className="mt-6 max-w-xl text-base text-cerebro-muted sm:text-lg">
+      <div className="relative z-[2] max-w-[660px] px-6 pb-16 sm:px-16 sm:pb-24">
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-metallic font-landing text-6xl leading-none tracking-tight sm:text-7xl md:text-8xl">
+            Cerebro
+          </h1>
+          <span className="font-landing text-2xl text-cerebro-accent-lightest sm:text-3xl">
+            Agency Orchestration
+          </span>
+        </div>
+        <p className="mt-6 text-lg text-cerebro-muted sm:text-xl">
           Walk out of your prison, work anywhere.
         </p>
-
-        <a
-          href="#talk-to-cerebro"
-          className="mt-10 inline-flex items-center justify-center border border-cerebro-accent-light bg-cerebro-accent px-8 py-3 text-sm font-medium tracking-wide text-cerebro-ink transition-colors hover:bg-cerebro-accent-light"
-        >
-          Talk to Cerebro
-        </a>
       </div>
     </section>
   );
