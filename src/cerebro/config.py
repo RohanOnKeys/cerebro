@@ -39,6 +39,17 @@ class Settings(BaseSettings):
     tool_mode: Literal["native", "json"] = "native"
     environment: str = "development"
     nudge_time_scale: float = 1.0
+    admin_api_token: str = ""
+    cors_allowed_origins: str = "http://localhost:3000"
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        """Comma-separated origins, split and trimmed for CORSMiddleware."""
+        return [
+            origin.strip()
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
+        ]
 
     @field_validator("tool_mode", mode="before")
     @classmethod
