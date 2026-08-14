@@ -5,39 +5,46 @@ interface SecondaryCapability {
 
 const SECONDARY: SecondaryCapability[] = [
   {
-    title: "Multichannel by default.",
-    body: "One agent, four surfaces. Telegram, Discord, Slack, and Email all reach the same brain and speak with the same voice.",
+    title: "Reach Us However You Already Talk.",
+    body: "Message on Telegram or email, and it reaches the same team with the same answers, every time. No new app to learn.",
   },
   {
-    title: "Verified identity, always.",
-    body: "Every sender proves who they are through a one time code before a single command runs.",
+    title: "Verified, Every Time.",
+    body: "Every message is confirmed to be from a real, known contact with a quick one-time code, so nothing runs on a guess.",
   },
   {
-    title: "Notification routing by urgency.",
-    body: "Quiet things land in the ledger, loud things escalate, and unanswered items follow up on their own.",
+    title: "Nothing Urgent Gets Missed.",
+    body: "Time-sensitive requests are flagged right away, and if nobody has responded in time, it's automatically escalated to make sure it gets seen.",
   },
   {
-    title: "Meeting memory.",
-    body: "Every decision is stored and retrievable by anyone with the right to see it.",
+    title: "Meeting Memory.",
+    body: "Ask what was decided in any meeting, any time, and get a straight answer instead of digging back through old messages.",
   },
   {
-    title: "A central audit trail.",
-    body: "Every event is logged: who asked, what ran, what it returned, when.",
+    title: "Nothing Falls Through the Cracks.",
+    body: "Every request and every update is tracked from start to finish, so nothing gets lost or forgotten.",
   },
 ];
 
 export function SecondaryCapabilities() {
   return (
-    <section className="border-b border-cerebro-border py-20">
-      <div className="mx-auto max-w-3xl px-6">
-        <ul className="space-y-8">
-          {SECONDARY.map((item) => (
-            <li key={item.title}>
-              <p className="font-display text-base font-semibold text-cerebro-ink">{item.title}</p>
-              <p className="mt-1.5 text-sm leading-relaxed text-cerebro-muted">{item.body}</p>
-            </li>
-          ))}
-        </ul>
+    <section className="py-10 sm:py-12">
+      <div className="mx-auto max-w-4xl px-6">
+        {SECONDARY.map((item, index) => (
+          <div
+            key={item.title}
+            className={`flex flex-wrap gap-8 border-t border-cerebro-border/60 py-6 ${
+              index === SECONDARY.length - 1 ? "border-b" : ""
+            }`}
+          >
+            <h4 className="w-full flex-shrink-0 font-landing text-base text-cerebro-ink sm:w-56">
+              {item.title}
+            </h4>
+            <p className="min-w-[280px] flex-1 text-base leading-relaxed text-cerebro-muted">
+              {item.body}
+            </p>
+          </div>
+        ))}
       </div>
     </section>
   );

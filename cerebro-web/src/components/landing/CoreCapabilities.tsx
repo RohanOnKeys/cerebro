@@ -5,44 +5,38 @@ interface Capability {
 
 const CAPABILITIES: Capability[] = [
   {
-    title: "Jira, from the chat you're already in.",
-    body: "Cerebro opens tickets the moment work is identified, filing them straight into the right project with the right labels and issue type, no context switch required. Ask for a status update on any ticket by its key and get the current state and summary back instantly, so the backlog stays accurate without anyone having to open Jira to check it.",
+    title: "Ask, and It's Assigned.",
+    body: "Tell Cerebro what you need in plain language, and it goes straight to the right person on the team — no forms, no waiting on a queue. Ask for an update any time and get a straight answer back in the same chat, instantly.",
   },
   {
-    title: "Scheduling that knows the room.",
-    body: "Cerebro reads real Google Calendar availability across every attendee before it proposes a single time. Once a slot is confirmed, it creates the event, generates the Meet link, and notifies each attendee on the channel that person actually reads. No polls in a thread nobody opens, no double bookings, no back and forth.",
+    title: "Scheduling That Knows the Room.",
+    body: "Cerebro checks everyone's real availability before it suggests a time. Once everyone agrees, the meeting is booked, the video link is ready, and each person gets notified on whatever app they actually use. No polls, no double-booking, no back and forth.",
   },
   {
-    title: "CI as a conversation.",
-    body: "Trigger a GitHub Actions workflow, watch it run, and get told how it ended, all from the same chat window you were already complaining in. If a run needs to be stopped, Cerebro cancels it on request. Every trigger, result, and cancellation is tied back to the verified person who asked for it.",
+    title: "Always in the Loop.",
+    body: "Ask what's being worked on, what's done, or what's next, and get a plain answer immediately — no chasing anyone down. Every question reaches a real person on the team and gets tracked until it's answered.",
   },
 ];
 
 export function CoreCapabilities() {
   return (
-    <section className="border-b border-cerebro-border py-24 sm:py-32" id="talk-to-cerebro">
-      <div className="mx-auto max-w-5xl px-6">
-        <h2 className="font-display text-sm font-semibold uppercase tracking-widest text-cerebro-accent-lighter">
-          Core capabilities
-        </h2>
-
-        <div className="mt-10">
-          {CAPABILITIES.map((capability, index) => (
-            <div
-              key={capability.title}
-              className={`grid grid-cols-1 gap-6 py-14 sm:grid-cols-[1fr_1.6fr] sm:gap-16 ${
-                index === 0 ? "" : "border-t border-cerebro-border"
-              }`}
-            >
-              <h3 className="font-display text-2xl font-semibold leading-snug text-cerebro-ink sm:text-3xl">
-                {capability.title}
-              </h3>
-              <p className="text-base leading-relaxed text-cerebro-muted sm:text-lg">
-                {capability.body}
-              </p>
-            </div>
-          ))}
-        </div>
+    <section className="py-16 sm:py-20" id="talk-to-cerebro">
+      <div className="mx-auto max-w-6xl px-6">
+        {CAPABILITIES.map((capability, index) => (
+          <div
+            key={capability.title}
+            className={`grid grid-cols-1 gap-6 border-t border-cerebro-border py-16 sm:grid-cols-[360px_1fr] sm:gap-14 ${
+              index === CAPABILITIES.length - 1 ? "border-b" : ""
+            }`}
+          >
+            <h3 className="font-landing text-2xl leading-snug text-cerebro-ink sm:text-3xl">
+              {capability.title}
+            </h3>
+            <p className="max-w-3xl text-base leading-relaxed text-cerebro-muted sm:text-lg">
+              {capability.body}
+            </p>
+          </div>
+        ))}
       </div>
     </section>
   );

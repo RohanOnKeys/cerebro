@@ -22,8 +22,10 @@ const config: Config = {
         },
       },
       fontFamily: {
-        // Archivo: confident grotesque, used for headlines and section titles.
+        // Archivo: confident grotesque, used for dashboard headlines and section titles.
         display: ["var(--font-archivo)", "system-ui", "sans-serif"],
+        // Unica One: the marketing landing page's display face (hero, capability titles).
+        landing: ["var(--font-unica)", "system-ui", "sans-serif"],
         // Work Sans: humanist, used for all body copy, labels, and table data.
         sans: ["var(--font-work-sans)", "system-ui", "sans-serif"],
       },

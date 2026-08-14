@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
-import { Archivo, Work_Sans } from "next/font/google";
+import { Archivo, Unica_One, Work_Sans } from "next/font/google";
 import "./globals.css";
 
 const archivo = Archivo({
   subsets: ["latin"],
   weight: ["500", "600", "700"],
   variable: "--font-archivo",
+  display: "swap",
+});
+
+const unicaOne = Unica_One({
+  subsets: ["latin"],
+  weight: ["400"],
+  variable: "--font-unica",
   display: "swap",
 });
 
@@ -23,7 +30,7 @@ export const metadata: Metadata = {
     template: "%s — Cerebro",
   },
   description:
-    "Cerebro is the company second brain: one agent across WhatsApp, Telegram, Discord, Slack, and Email, with verified identity, scheduling, notification routing, and CI as a conversation.",
+    "Cerebro is your direct line to the team: reach us on Telegram or email, get meetings scheduled, requests assigned, and questions answered, with every sender verified.",
 };
 
 export default function RootLayout({
@@ -32,7 +39,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${archivo.variable} ${workSans.variable}`}>
+    <html lang="en" className={`${archivo.variable} ${unicaOne.variable} ${workSans.variable}`}>
       <body className="font-sans">{children}</body>
     </html>
   );
