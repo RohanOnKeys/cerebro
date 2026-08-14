@@ -1,8 +1,13 @@
+import Image from "next/image";
+
 export function TopBar() {
   return (
     <header className="flex h-20 items-center gap-8 border-b border-cerebro-border px-8">
-      <span className="text-metallic font-display text-xl font-semibold tracking-tight">
-        Cerebro
+      <span className="flex items-center gap-2.5">
+        <Image src="/cerebro-brain.png" alt="" width={24} height={24} className="h-6 w-6 object-contain" />
+        <span className="text-metallic font-display text-xl font-semibold tracking-tight">
+          Cerebro
+        </span>
       </span>
 
       <div className="flex-1">
