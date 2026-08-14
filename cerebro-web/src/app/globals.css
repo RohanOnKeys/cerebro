@@ -11,7 +11,6 @@
     @apply bg-cerebro-bg text-cerebro-ink antialiased;
   }
 
-  /* Thin, deliberate scrollbar to match the flat, no-glow visual language. */
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -26,10 +25,6 @@
 }
 
 @layer utilities {
-  /* Restrained brushed-steel treatment for the two places the spec allows
-     it: the hero headline and dashboard panel/logotype titles. Matte, not
-     chrome — a soft diagonal luminance sweep rather than a reflective
-     gradient, so it still reads as flat text at a glance. */
   .text-metallic {
     background-image: linear-gradient(
       115deg,
