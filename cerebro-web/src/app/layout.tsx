@@ -2,11 +2,6 @@ import type { Metadata } from "next";
 import { Archivo, Work_Sans } from "next/font/google";
 import "./globals.css";
 
-// Self-hosted at build time by next/font — no runtime request to Google
-// Fonts, no layout shift, and no flash of a fallback typeface. Archivo
-// carries headlines and section titles (confident, editorial grotesque);
-// Work Sans carries all body copy, labels, and table data (humanist,
-// clean). Deliberately not Roboto or a monospace face per the brand brief.
 const archivo = Archivo({
   subsets: ["latin"],
   weight: ["500", "600", "700"],
