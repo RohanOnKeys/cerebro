@@ -30,7 +30,7 @@ def db_session():
 @pytest.fixture
 def client_principal(db_session):
     """Create a CLIENT principal."""
-    org = Org(id="org_1", name="Test Org", created_at=datetime.now(UTC))
+    org = Org(id="org_1", name="Test Org", join_code="TESTORG", created_at=datetime.now(UTC))
     db_session.add(org)
     principal = Principal(
         id="principal_client",

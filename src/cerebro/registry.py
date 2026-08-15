@@ -97,6 +97,37 @@ def enroll_principal(
     }
 
 
+def create_team(
+    *,
+    session: Session,
+    principal: Principal,
+    name: str,
+    code: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """Create a new team (org) and return its join code.
+
+    The caller hands that code out on Slack, Discord, or email (any
+    channel's onboarding flow accepts it - see ingress/enrollment.py) to
+    invite clients or teammates into the new team. This is a CREATE, not a
+    join: a caller-supplied `code` that's already taken is rejected rather
+    than silently reusing that other team, unlike the implicit
+    resolve-or-create an unrecognized code triggers during onboarding.
+    """
+    from cerebro.services import orgs as orgs_service
+
+    chosen_code = code or orgs_service.generate_join_code()
+    org, created = orgs_service.resolve_or_create_org_by_code(session, chosen_code)
+    if not created:
+        return {
+            "error": "code_already_in_use",
+            "code": orgs_service.normalize_code(chosen_code),
+        }
+    org.name = name
+    session.commit()
+    return {"org_id": org.id, "name": org.name, "join_code": org.join_code}
+
+
 def set_availability(
     *,
     principal: Principal,
@@ -950,6 +981,29 @@ TOOLS: dict[str, ToolSpec] = {
         },
         handler=enroll_principal,
         # Ops/team only: CLIENT must not enroll other principals.
+        allowed_populations=_TEAM_POPULATIONS,
+    ),
+    "create_team": ToolSpec(
+        name="create_team",
+        description=(
+            "Create a new team (org) and return its join code, to hand out on "
+            "Slack, Discord, or email so clients or teammates can be onboarded "
+            "into it. Rejects an explicit code that's already in use."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "code": {
+                    "type": "string",
+                    "description": "Optional; auto-generated if omitted.",
+                },
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+        handler=create_team,
+        # Ops/team only: a CLIENT shouldn't be able to spin up new teams.
         allowed_populations=_TEAM_POPULATIONS,
     ),
     "set_availability": ToolSpec(

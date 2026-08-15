@@ -97,6 +97,10 @@ def _lookup(session: Session, nonce: str) -> RoleClaim | None:
     return session.query(RoleClaim).filter(RoleClaim.nonce == nonce).first()
 
 
+def _lookup_by_id(session: Session, claim_id: str) -> RoleClaim | None:
+    return session.query(RoleClaim).filter(RoleClaim.id == claim_id).first()
+
+
 def _assert_eligible(
     claim: RoleClaim | None, *, approver: Principal, nonce: str, now: datetime
 ) -> RoleClaim:
@@ -181,5 +185,89 @@ def deny_role_claim(
     return {
         "status": "denied",
         "nonce": nonce,
+        "claimant_principal_id": claim.claimant_principal_id,
+    }
+
+
+def _assert_pending(claim: RoleClaim | None, *, claim_id: str, now: datetime) -> RoleClaim:
+    """Shared precondition for the admin-dashboard path below: unlike
+    _assert_eligible, this deliberately does NOT check an approver's rank
+    against the claim — the dashboard's admin bearer token (see
+    cerebro.admin.auth) is a different, already-higher trust boundary than
+    "a specific ranked peer confirms from chat", so re-imposing the peer
+    ladder here would just block legitimate admin action on a claim with
+    no chat-reachable eligible approver yet."""
+    if claim is None:
+        raise RoleClaimRejected(f"unknown claim {claim_id}")
+    if claim.status != RoleClaimStatus.PENDING.value:
+        raise RoleClaimRejected(f"claim is {claim.status}, not pending")
+    expires = claim.expires_at
+    if expires is not None and expires.tzinfo is None:
+        expires = expires.replace(tzinfo=UTC)
+    if expires is None or now >= expires:
+        raise RoleClaimRejected("claim expired")
+    return claim
+
+
+def approve_role_claim_as_admin(
+    session: Session, *, claim_id: str, now: datetime | None = None
+) -> dict[str, Any]:
+    """Approve a pending role claim from the team dashboard rather than a
+    chat APPROVE command. Same state transition as approve_role_claim
+    (promotes the claimant, nudges them), no peer-rank check — see
+    _assert_pending. `approver_principal_id` is left null since there's no
+    real Principal behind an admin-dashboard action, only a shared bearer
+    token (cerebro.admin.auth)."""
+    moment = now or datetime.now(UTC)
+    claim = _assert_pending(_lookup_by_id(session, claim_id), claim_id=claim_id, now=moment)
+
+    claimant = (
+        session.query(Principal).filter(Principal.id == claim.claimant_principal_id).first()
+    )
+    if claimant is None:
+        raise RoleClaimRejected("claimant no longer exists")
+
+    claimant.population = Population(claim.requested_population)
+    claim.status = RoleClaimStatus.APPROVED.value
+    claim.resolved_at = moment
+    session.commit()
+
+    nudges_service.create_nudge(
+        session,
+        org_id=claim.org_id,
+        principal_id=claimant.id,
+        body=f"Your {claim.requested_population} claim was approved by an admin.",
+        kind=NudgeKind.ROLE_CLAIM_RESOLVED.value,
+    )
+    return {
+        "status": "approved",
+        "claim_id": claim_id,
+        "claimant_principal_id": claimant.id,
+        "population": claimant.population.value,
+    }
+
+
+def deny_role_claim_as_admin(
+    session: Session, *, claim_id: str, now: datetime | None = None
+) -> dict[str, Any]:
+    """Deny a pending role claim from the team dashboard. See
+    approve_role_claim_as_admin for why this skips the peer-rank check."""
+    moment = now or datetime.now(UTC)
+    claim = _assert_pending(_lookup_by_id(session, claim_id), claim_id=claim_id, now=moment)
+
+    claim.status = RoleClaimStatus.DENIED.value
+    claim.resolved_at = moment
+    session.commit()
+
+    nudges_service.create_nudge(
+        session,
+        org_id=claim.org_id,
+        principal_id=claim.claimant_principal_id,
+        body=f"Your {claim.requested_population} claim was denied by an admin.",
+        kind=NudgeKind.ROLE_CLAIM_RESOLVED.value,
+    )
+    return {
+        "status": "denied",
+        "claim_id": claim_id,
         "claimant_principal_id": claim.claimant_principal_id,
     }

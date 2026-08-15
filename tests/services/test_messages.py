@@ -27,7 +27,7 @@ def db_session():
 
 @pytest.fixture
 def dev_principal(db_session):
-    org = Org(id="org_1", name="Test Org", created_at=datetime.now(UTC))
+    org = Org(id="org_1", name="Test Org", join_code="TESTORG", created_at=datetime.now(UTC))
     db_session.add(org)
     principal = Principal(
         id="p_dev", org_id="org_1", population=Population.DEV, created_at=datetime.now(UTC)

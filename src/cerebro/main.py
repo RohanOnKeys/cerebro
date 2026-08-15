@@ -55,34 +55,44 @@ async def on_message(sender: str, channel: str, text: str) -> str:
 
 
 def handle_unknown_sender(session, channel: str, channel_id: str, text: str) -> str:
-    """Ask an unrecognized sender whether they're a client or on the team.
+    """Onboard an unrecognized sender in two stages, same on every channel
+    (Telegram, Discord, Slack, Email all share this one handler):
 
-    First message from a (channel, channel_id) pair we've never seen gets
-    the question; the reply to that question is parsed for a population and
-    an email, and the email is what makes identity persist across channels -
+    1. "awaiting_code" - what's your team's code? Routes them to the right
+       org, or mints a new one if the code isn't recognized yet.
+    2. "awaiting_usertype" - are you a CLIENT or on the TEAM (plus role,
+       plus email)? Same as before, now scoped to the org resolved in
+       stage 1 instead of a hardcoded default_org.
+
+    The email in stage 2 is what makes identity persist across channels -
     find_or_create_principal_by_email binds a second channel to the same
     principal instead of minting a new one when the email already matches.
     """
     from cerebro.ingress.enrollment import (
+        CODE_PROMPT,
         ENROLLMENT_PROMPT,
+        apply_join_code,
         complete_enrollment,
         get_pending_enrollment,
+        is_plausible_code,
         parse_enrollment_answer,
         start_enrollment,
     )
 
-    org_id = "default_org"
     conversation_id = f"conv_{channel}_{channel_id}"
 
     pending = get_pending_enrollment(session, channel=channel, channel_id=channel_id)
     if pending is None:
         start_enrollment(
-            session,
-            org_id=org_id,
-            channel=channel,
-            channel_id=channel_id,
-            conversation_id=conversation_id,
+            session, channel=channel, channel_id=channel_id, conversation_id=conversation_id
         )
+        return CODE_PROMPT
+
+    if pending.stage == "awaiting_code":
+        code = text.strip()
+        if not is_plausible_code(code):
+            return f"That doesn't look like a team code. {CODE_PROMPT}"
+        apply_join_code(session, pending=pending, code=code)
         return ENROLLMENT_PROMPT
 
     answer = parse_enrollment_answer(text)

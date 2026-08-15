@@ -14,6 +14,7 @@ from cerebro.db.models import (
 )
 
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_CODE_RE = re.compile(r"^[A-Za-z0-9-]{3,20}$")
 _TEAM_ROLE_ALIASES: dict[str, Population] = {
     "OPS": Population.OPS,
     "DEV": Population.DEV,
@@ -24,18 +25,46 @@ _TEAM_ROLE_ALIASES: dict[str, Population] = {
 # DEV/LEAD/ADMIN claims need an existing peer's sign-off before they take
 # effect (verify/role_claims.py); OPS is the safe, immediate default.
 GATED_POPULATIONS = frozenset({Population.DEV, Population.LEAD, Population.ADMIN})
+
+# Stage 1: every unrecognized sender is asked this first, on every channel
+# (Telegram, Discord, Slack, Email all share this one on_message handler,
+# so there's nothing channel-specific to wire here). See services/orgs.py
+# for what happens with the answer.
+CODE_PROMPT = (
+    "Welcome to Cerebro! What's your team's code? If you don't have one yet, "
+    "just reply with a short code of your own (letters and numbers) to start "
+    "your team."
+)
+
+# Stage 2: asked once the team code resolves to an org.
 ENROLLMENT_PROMPT = (
-    "Welcome! Are you a CLIENT or on the TEAM? Reply with your answer and your "
+    "Are you a CLIENT or on the TEAM? Reply with your answer and your "
     "email so your identity carries across every channel you message us on, "
     "e.g. 'CLIENT jane@example.com' or 'TEAM jane@example.com' "
     "(or 'TEAM DEV jane@example.com' to name a specific role)."
 )
 
 
+def is_plausible_code(text: str) -> bool:
+    """Pure: guards against treating an ordinary greeting ('hi there') as a
+    team code and minting a junk org for it — a real code is one token,
+    letters/digits/hyphens, 3-20 characters."""
+    return bool(_CODE_RE.match(text.strip()))
+
+
 def _ensure_org(session: Session, org_id: str) -> None:
     """Create the org row if it doesn't exist yet (first-touch, not a seed script)."""
     if session.get(Org, org_id) is None:
-        session.add(Org(id=org_id, name=org_id, created_at=datetime.now(UTC)))
+        from cerebro.services.orgs import generate_join_code
+
+        session.add(
+            Org(
+                id=org_id,
+                name=org_id,
+                join_code=generate_join_code(),
+                created_at=datetime.now(UTC),
+            )
+        )
         session.flush()
 
 
@@ -120,22 +149,38 @@ def get_pending_enrollment(
 
 
 def start_enrollment(
-    session: Session, *, org_id: str, channel: str, channel_id: str, conversation_id: str
+    session: Session, *, channel: str, channel_id: str, conversation_id: str
 ) -> PendingEnrollment:
-    """Record that we've asked an unknown sender client-vs-team (idempotent)."""
-    _ensure_org(session, org_id)
+    """Record that we've asked an unknown sender for their team code
+    (idempotent). org_id is unknown at this point — see apply_join_code."""
     existing = get_pending_enrollment(session, channel=channel, channel_id=channel_id)
     if existing is not None:
         return existing
     pending = PendingEnrollment(
         id=str(uuid.uuid4()),
-        org_id=org_id,
+        org_id=None,
+        stage="awaiting_code",
         channel=channel,
         channel_id=channel_id,
         conversation_id=conversation_id,
         created_at=datetime.now(UTC),
     )
     session.add(pending)
+    session.commit()
+    return pending
+
+
+def apply_join_code(
+    session: Session, *, pending: PendingEnrollment, code: str
+) -> PendingEnrollment:
+    """Resolve (or create) the org for a team code and advance the pending
+    enrollment to the usertype/role stage. Caller sends ENROLLMENT_PROMPT
+    next."""
+    from cerebro.services.orgs import resolve_or_create_org_by_code
+
+    org, _created = resolve_or_create_org_by_code(session, code)
+    pending.org_id = org.id
+    pending.stage = "awaiting_usertype"
     session.commit()
     return pending
 

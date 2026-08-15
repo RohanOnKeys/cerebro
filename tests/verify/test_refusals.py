@@ -34,7 +34,7 @@ def db_session():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
-    session.add(Org(id="org_1", name="Test Org", created_at=datetime.now(UTC)))
+    session.add(Org(id="org_1", name="Test Org", join_code="TESTORG", created_at=datetime.now(UTC)))
     session.commit()
     yield session
     session.close()

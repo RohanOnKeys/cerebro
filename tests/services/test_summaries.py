@@ -30,7 +30,7 @@ def db_session():
 
 @pytest.fixture
 def org(db_session):
-    org = Org(id="org_1", name="Test Org", created_at=datetime.now(UTC))
+    org = Org(id="org_1", name="Test Org", join_code="TESTORG", created_at=datetime.now(UTC))
     db_session.add(org)
     db_session.commit()
     return org

@@ -120,6 +120,19 @@ class Org(Base):
 
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
+    # Short, unique, human-typeable code an unknown sender answers with
+    # during onboarding to be routed into this org rather than a single
+    # hardcoded default (see ingress/enrollment.py, services/orgs.py).
+    join_code = Column(String, nullable=False, unique=True)
+    admin_contact = Column(String)
+    billing_tier = Column(String)
+    # Danger Zone flags (Settings page). Persisted, real, admin-token-gated
+    # mutations — but nothing else in this codebase reads them yet to
+    # actually disconnect a channel or deactivate an integration (the
+    # caspian-sdk channel gateway is a separate process with no knowledge
+    # of this column). See migration 0016 for the full note.
+    channels_active = Column(Boolean, nullable=False, default=True)
+    workspace_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
 
     principals = relationship("Principal", back_populates="org")
@@ -416,12 +429,18 @@ class Crossing(Base):
 
 
 class PendingEnrollment(Base):
-    """An unknown sender has been asked client-vs-team but hasn't answered yet."""
+    """An unknown sender is mid-onboarding and hasn't finished answering yet.
+
+    Two stages, tracked by `stage`: "awaiting_code" (org_id is still null —
+    the sender hasn't given a team code yet) then "awaiting_usertype" (org_id
+    is set; waiting on CLIENT/TEAM + role + email). See ingress/enrollment.py.
+    """
 
     __tablename__ = "pending_enrollments"
 
     id = Column(String, primary_key=True)
-    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=True)
+    stage = Column(String, nullable=False, default="awaiting_code")
     channel = Column(String, nullable=False)
     channel_id = Column(String, nullable=False)
     conversation_id = Column(String, nullable=False)
@@ -538,4 +557,27 @@ class RoleClaim(Base):
         Index("ix_role_claims_status_expires_at", "status", "expires_at"),
         Index("ix_role_claims_org_id", "org_id"),
         Index("ix_role_claims_claimant_principal_id", "claimant_principal_id"),
+    )
+
+
+class NotificationPreference(Base):
+    """One org-scoped toggle on the dashboard's Settings page. `key` is a
+    stable machine name (e.g. "project_status_changed"); `label` is the
+    human copy shown next to the checkbox — kept in the DB rather than a
+    frontend constant so relabeling doesn't need a deploy."""
+
+    __tablename__ = "notification_preferences"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    key = Column(String, nullable=False)
+    label = Column(String, nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_notification_preferences_org_id", "org_id"),
+        Index(
+            "ix_notification_preferences_org_id_key", "org_id", "key", unique=True
+        ),
     )
