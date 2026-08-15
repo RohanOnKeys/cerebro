@@ -69,6 +69,14 @@ export interface ScheduledReminder {
   stage: ReminderStage;
 }
 
+export interface PastMeeting {
+  id: string;
+  title: string;
+  endedAt: string; // ISO timestamp
+  organizer: string;
+  provider: ConferencingProvider;
+}
+
 export type CiResult = "passed" | "failed" | "cancelled";
 
 export interface CiRun {
@@ -96,6 +104,27 @@ export interface AllowlistRow {
 }
 
 export interface StatStripItem {
-  value: number;
+  value: number | string;
   label: string;
+}
+
+export type ApiKeyStatus = "configured" | "missing";
+
+export interface ChannelConfig {
+  channel: ChannelName;
+  apiKeyStatus: ApiKeyStatus;
+}
+
+export interface NotificationPreference {
+  id: string;
+  label: string;
+  enabled: boolean;
+}
+
+export interface OrganizationInfo {
+  name: string;
+  adminContact: string;
+  billingTier: string;
+  /** Short code new members/clients type during onboarding to join this org. */
+  joinCode: string;
 }

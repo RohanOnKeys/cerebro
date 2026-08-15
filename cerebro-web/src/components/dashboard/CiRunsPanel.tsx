@@ -12,9 +12,15 @@ const RESULT_LABEL: Record<CiResult, string> = {
 // communicated by text label plus a thin left border in a supporting
 // accent shade."
 const RESULT_BORDER: Record<CiResult, string> = {
-  passed: "border-l-cerebro-accent-lighter",
-  failed: "border-l-cerebro-accent",
+  passed: "border-l-cerebro-success",
+  failed: "border-l-cerebro-danger",
   cancelled: "border-l-cerebro-border",
+};
+
+const RESULT_TEXT: Record<CiResult, string> = {
+  passed: "text-cerebro-success",
+  failed: "text-cerebro-danger",
+  cancelled: "text-cerebro-muted",
 };
 
 export function CiRunsPanel({ runs }: { runs: CiRun[] }) {
@@ -29,7 +35,7 @@ export function CiRunsPanel({ runs }: { runs: CiRun[] }) {
             <span className="text-sm font-medium text-cerebro-ink">{run.repo}</span>
             <span className="text-sm text-cerebro-muted">{run.workflowName}</span>
             <span className="text-sm text-cerebro-muted">{run.triggeredBy}</span>
-            <span className="text-sm text-cerebro-ink">{RESULT_LABEL[run.result]}</span>
+            <span className={`text-sm ${RESULT_TEXT[run.result]}`}>{RESULT_LABEL[run.result]}</span>
             <span className="text-sm text-cerebro-muted">{formatDuration(run.durationSeconds)}</span>
             <span className="text-sm text-cerebro-muted">{formatTimestamp(run.finishedAt)}</span>
           </div>

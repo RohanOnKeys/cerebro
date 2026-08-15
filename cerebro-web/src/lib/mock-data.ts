@@ -1,9 +1,13 @@
 import type {
   AllowlistRow,
   CiRun,
+  ChannelConfig,
   ChannelStatus,
   LedgerEntry,
   Member,
+  NotificationPreference,
+  OrganizationInfo,
+  PastMeeting,
   PendingApproval,
   Project,
   ScheduledReminder,
@@ -151,6 +155,37 @@ export const scheduledReminders: ScheduledReminder[] = [
   { id: "rem-3", meetingId: "mtg-3", meetingTitle: "Client onboarding call", stage: "t_minus_10m" },
 ];
 
+export const pastMeetings: PastMeeting[] = [
+  {
+    id: "past-1",
+    title: "Q2 retrospective",
+    endedAt: "2026-08-08T18:00:00Z",
+    organizer: "Wei Zhang",
+    provider: "google_meet",
+  },
+  {
+    id: "past-2",
+    title: "Onboarding: Daniel Osei",
+    endedAt: "2026-08-07T15:00:00Z",
+    organizer: "Priya Shah",
+    provider: "zoom",
+  },
+  {
+    id: "past-3",
+    title: "Vendor review — hosting renewal",
+    endedAt: "2026-08-06T19:30:00Z",
+    organizer: "Tomás Rivera",
+    provider: "google_meet",
+  },
+  {
+    id: "past-4",
+    title: "Sprint planning",
+    endedAt: "2026-08-05T18:30:00Z",
+    organizer: "Arjun Mehta",
+    provider: "zoom",
+  },
+];
+
 export const ciRuns: CiRun[] = [
   {
     id: "run-1",
@@ -245,3 +280,24 @@ export const allowlist: AllowlistRow[] = [
   { tool: "create_jira_ticket", populations: { ops: true, dev: true, lead: true, admin: true } },
   { tool: "jira_issue_status", populations: { ops: true, dev: true, lead: true, admin: true } },
 ];
+
+export const channelConfig: ChannelConfig[] = [
+  { channel: "telegram", apiKeyStatus: "configured" },
+  { channel: "discord", apiKeyStatus: "configured" },
+  { channel: "slack", apiKeyStatus: "configured" },
+  { channel: "email", apiKeyStatus: "missing" },
+];
+
+export const notificationPreferences: NotificationPreference[] = [
+  { id: "notif-1", label: "Notify me when a project changes status", enabled: true },
+  { id: "notif-2", label: "Notify me on new pending approvals", enabled: true },
+  { id: "notif-3", label: "Notify me on every CI run, including passes", enabled: false },
+  { id: "notif-4", label: "Daily ledger summary email", enabled: true },
+];
+
+export const organization: OrganizationInfo = {
+  name: "Cerebro",
+  adminContact: "wei.zhang@cerebro.ai",
+  billingTier: "Enterprise",
+  joinCode: "CBR4F2A",
+};

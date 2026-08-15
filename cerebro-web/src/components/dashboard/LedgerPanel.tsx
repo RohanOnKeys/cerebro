@@ -2,9 +2,16 @@ import { formatTimestamp } from "@/lib/format";
 import type { LedgerEntry } from "@/lib/types";
 import { Panel } from "@/components/dashboard/Panel";
 
-export function LedgerPanel({ entries }: { entries: LedgerEntry[] }) {
+export function LedgerPanel({
+  entries,
+  filters,
+}: {
+  entries: LedgerEntry[];
+  filters?: React.ReactNode;
+}) {
   return (
     <Panel id="ledger" title="Ledger">
+      {filters && <div className="mb-8">{filters}</div>}
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-b border-cerebro-border text-cerebro-muted">
