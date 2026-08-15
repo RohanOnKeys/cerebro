@@ -1,10 +1,8 @@
 /**
  * Types here intentionally mirror the enums and tables in the Python
  * backend's db/models.py (Population, TaskStatus, MeetingStatus, CiRun,
- * Crossing, ...). Keeping the shapes aligned means the day a real Admin/Read
- * API exists, `src/lib/api.ts` can fetch and cast into these types with no
- * further modeling work — only `src/lib/mock-data.ts` (or its call sites)
- * needs to change.
+ * Crossing, ...), so `src/lib/api.ts` can fetch and cast into these types
+ * with no further modeling work.
  */
 
 export type Population = "client" | "ops" | "dev" | "lead" | "admin";

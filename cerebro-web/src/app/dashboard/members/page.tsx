@@ -25,7 +25,7 @@ export default async function MembersPage() {
   ];
 
   return (
-    <DashboardShell active="members" stats={stats} usingMockData={data.usingMockData}>
+    <DashboardShell active="members" stats={stats}>
       <MembersRolesPanel members={members} pendingApprovals={data.pendingApprovals} />
     </DashboardShell>
   );

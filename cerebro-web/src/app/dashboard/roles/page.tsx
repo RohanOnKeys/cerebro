@@ -25,7 +25,7 @@ export default async function RolesPage() {
   ];
 
   return (
-    <DashboardShell active="roles" stats={stats} usingMockData={data.usingMockData}>
+    <DashboardShell active="roles" stats={stats}>
       <RoleLadderPanel members={members} />
       <AllowlistPanel rows={data.allowlist} />
     </DashboardShell>

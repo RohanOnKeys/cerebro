@@ -27,9 +27,9 @@ import type {
  * so these fetches run only during SSR; the token never ships in client JS.
  *
  * Every function here returns `null` on any failure (missing config,
- * network error, non-2xx response, bad shape) instead of throwing, so the
- * dashboard page can fall back to mock data and stay usable even if the
- * backend is down, unconfigured, or mid-deploy. See getDashboardData below.
+ * network error, non-2xx response, bad shape) instead of throwing, so a
+ * single unreachable endpoint degrades to an empty section instead of
+ * taking down the whole dashboard render. See getDashboardData below.
  */
 
 function apiBaseUrl(): string | null {
@@ -40,10 +40,6 @@ function apiBaseUrl(): string | null {
 function adminToken(): string | null {
   const token = process.env.CEREBRO_ADMIN_API_TOKEN;
   return token && token.trim().length > 0 ? token : null;
-}
-
-export function isApiConfigured(): boolean {
-  return apiBaseUrl() !== null && adminToken() !== null;
 }
 
 async function getJson<T>(path: string): Promise<T | null> {
@@ -127,14 +123,11 @@ export async function postAdmin<T>(
 }
 
 /**
- * Fetches every dashboard data source in parallel and returns a fully
- * populated result. `usingMockData` is true if the API isn't configured or
- * ANY fetch failed — the dashboard page uses that single flag to decide
- * whether to show the "sample data" banner, rather than tracking eight
- * separate fallback states.
+ * Fetches every dashboard data source in parallel. Each source degrades to
+ * an empty list (or a blank organization record) independently on failure —
+ * one unreachable endpoint doesn't blank out the rest of the dashboard.
  */
 export async function getDashboardData(): Promise<{
-  usingMockData: boolean;
   statStrip: StatStripItem[];
   channelStatuses: ChannelStatus[];
   activeProjects: Project[];
@@ -150,12 +143,6 @@ export async function getDashboardData(): Promise<{
   notificationPreferences: NotificationPreference[];
   organization: OrganizationInfo;
 }> {
-  const mock = await import("@/lib/mock-data");
-
-  if (!isApiConfigured()) {
-    return { usingMockData: true, ...mock };
-  }
-
   const [
     stats,
     channels,
@@ -188,46 +175,20 @@ export async function getDashboardData(): Promise<{
     getJson<OrganizationInfo>("/admin/organization"),
   ]);
 
-  const results = {
-    stats,
-    channels,
-    projects,
-    members,
-    approvals,
-    meetings,
-    reminders,
-    past,
-    ciRuns,
-    ledger,
-    allowlist,
-    channelConfig,
-    notificationPreferences,
-    organization,
-  };
-  const anyFailed = Object.values(results).some((r) => r === null);
-
-  if (anyFailed) {
-    // Partial data is worse than consistent mock data — a dashboard that's
-    // half-real, half-placeholder is misleading. Fail the whole batch back
-    // to mock data and let the banner say so.
-    return { usingMockData: true, ...mock };
-  }
-
   return {
-    usingMockData: false,
-    statStrip: stats!.items,
-    channelStatuses: channels!.items,
-    activeProjects: projects!.items,
-    members: members!.items,
-    pendingApprovals: approvals!.items,
-    upcomingMeetings: meetings!.items,
-    scheduledReminders: reminders!.items,
-    pastMeetings: past!.items,
-    ciRuns: ciRuns!.items,
-    ledgerEntries: ledger!.items,
-    allowlist: allowlist!.items,
-    channelConfig: channelConfig!.items,
-    notificationPreferences: notificationPreferences!.items,
-    organization: organization!,
+    statStrip: stats?.items ?? [],
+    channelStatuses: channels?.items ?? [],
+    activeProjects: projects?.items ?? [],
+    members: members?.items ?? [],
+    pendingApprovals: approvals?.items ?? [],
+    upcomingMeetings: meetings?.items ?? [],
+    scheduledReminders: reminders?.items ?? [],
+    pastMeetings: past?.items ?? [],
+    ciRuns: ciRuns?.items ?? [],
+    ledgerEntries: ledger?.items ?? [],
+    allowlist: allowlist?.items ?? [],
+    channelConfig: channelConfig?.items ?? [],
+    notificationPreferences: notificationPreferences?.items ?? [],
+    organization: organization ?? { name: "", adminContact: "", billingTier: "", joinCode: "" },
   };
 }
