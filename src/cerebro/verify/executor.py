@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from cerebro.db.models import Approval, ApprovalState, ChannelBinding, Principal
+from cerebro.db.models import Approval, ApprovalState, ChannelBinding, Population, Principal
 from cerebro.registry import TOOLS, ToolSpec
 from cerebro.verify.challenge import (
     compute_action_hash,
@@ -26,6 +26,14 @@ REFUSAL_WRONG_PRINCIPAL = "wrong_principal"
 ENROLL_GUIDANCE = (
     "Enroll a second channel (Telegram, Slack, Discord, or Email) before confirming."
 )
+# CLIENT is Telegram-only (see cerebro-client and the CLIENT population
+# design) - pointing them at Slack/Discord/Email here would be guidance
+# they can't actually act on.
+CLIENT_ENROLL_GUIDANCE = "Enroll a second channel (Telegram) before confirming."
+
+
+def enroll_guidance(population: Population) -> str:
+    return CLIENT_ENROLL_GUIDANCE if population == Population.CLIENT else ENROLL_GUIDANCE
 
 
 class ChallengeRejected(ValueError):
@@ -179,7 +187,7 @@ def invoke(
         return {
             "status": "refused",
             "reason": REFUSAL_SINGLE_CHANNEL,
-            "message": ENROLL_GUIDANCE,
+            "message": enroll_guidance(principal.population),
             "approval_id": audit.id,
         }
 

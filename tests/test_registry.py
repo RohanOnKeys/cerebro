@@ -100,8 +100,18 @@ def test_enroll_principal_handler_uses_enrollment_service(db_session, client_pri
     """enroll_principal handler wraps enroll_unknown_sender."""
     # client_principal fixture ensures org_1 exists
     _ = client_principal
+    caller = Principal(
+        id="p_ops_enroll",
+        org_id="org_1",
+        population=Population.OPS,
+        created_at=datetime.now(UTC),
+    )
+    db_session.add(caller)
+    db_session.commit()
+
     result = TOOLS["enroll_principal"].handler(
         session=db_session,
+        principal=caller,
         org_id="org_1",
         channel="telegram",
         channel_id="999888",
@@ -112,6 +122,33 @@ def test_enroll_principal_handler_uses_enrollment_service(db_session, client_pri
     assert result["verified"] == "verified"
     assert result["principal_id"]
     assert result["binding_id"]
+
+
+def test_enroll_principal_handler_defaults_org_id_to_caller_org(db_session):
+    """org_id is optional - a team member enrolling a new contact adds them to
+    their own org by default, not an arbitrary org_id they'd have to know and
+    type. (The bug this fixes: asked to "enroll me" by an already-known
+    sender, the model fell back to asking for org_id/channel_id and then
+    created a disconnected, garbage org out of whatever the user guessed.)"""
+    org = Org(id="org_caller", name="Caller Org", join_code="CALLERORG", created_at=datetime.now(UTC))
+    db_session.add(org)
+    caller = Principal(
+        id="p_ops_caller", org_id="org_caller", population=Population.OPS,
+        created_at=datetime.now(UTC),
+    )
+    db_session.add(caller)
+    db_session.commit()
+
+    result = TOOLS["enroll_principal"].handler(
+        session=db_session,
+        principal=caller,
+        channel="discord",
+        channel_id="dc-999",
+        conversation_id="conv_default_org",
+    )
+
+    new_principal = db_session.query(Principal).filter(Principal.id == result["principal_id"]).one()
+    assert new_principal.org_id == "org_caller"
 
 
 def test_reminder_system_client_only_gets_request_deadline():

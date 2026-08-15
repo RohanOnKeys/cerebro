@@ -17,6 +17,7 @@ from cerebro.db.models import (
 )
 from cerebro.registry import ToolSpec
 from cerebro.verify.executor import (
+    CLIENT_ENROLL_GUIDANCE,
     ENROLL_GUIDANCE,
     REFUSAL_SAME_CHANNEL,
     REFUSAL_SINGLE_CHANNEL,
@@ -101,6 +102,34 @@ def test_single_bound_channel_refuses_with_enroll_guidance(db_session):
     assert audit.state == ApprovalState.DENIED.value
     assert REFUSAL_SINGLE_CHANNEL in audit.action
     assert REFUSAL_SINGLE_CHANNEL in audit.payload_json
+
+
+def test_single_bound_channel_guidance_omits_slack_discord_for_client(db_session):
+    """CLIENT is restricted to Telegram/Email - the refusal message must not
+    point them at Slack/Discord, channels they can't actually enroll."""
+    principal = Principal(
+        id="p_client",
+        org_id="org_1",
+        population=Population.CLIENT,
+        email="client@test.com",
+        created_at=datetime.now(UTC),
+    )
+    db_session.add(principal)
+    db_session.commit()
+    _bind(db_session, "p_client", "b_client", "telegram", "tg-client")
+
+    outcome = invoke(
+        db_session,
+        principal=principal,
+        tool_name="risky.deploy",
+        args={},
+        channel="telegram",
+        tools=_tier2(),
+    )
+
+    assert outcome["message"] == CLIENT_ENROLL_GUIDANCE
+    assert "Slack" not in outcome["message"]
+    assert "Discord" not in outcome["message"]
 
 
 def test_same_channel_confirm_refuses_with_audit(db_session):

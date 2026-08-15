@@ -99,17 +99,18 @@ def handle_unknown_sender(session, channel: str, channel_id: str, text: str) -> 
     if answer is None:
         return f"Sorry, I didn't catch that. {ENROLLMENT_PROMPT}"
 
-    population, email = answer
+    population, email, name = answer
     principal, _binding, claim = complete_enrollment(
-        session, pending=pending, population=population, email=email
+        session, pending=pending, population=population, email=email, name=name
     )
+    greeting = f"Welcome, {name}!" if name else "Welcome!"
     if claim is not None:
         return (
-            f"You've been enrolled as {principal.population.value} for now. "
+            f"{greeting} You've been enrolled as {principal.population.value} for now. "
             f"Your {population.value} claim ({claim.nonce}) is pending approval "
             "from an existing teammate at that level or above."
         )
-    return f"Welcome! You've been enrolled as {principal.population.value} ({email})."
+    return f"{greeting} You've been enrolled as {principal.population.value} ({email})."
 
 
 def handle_free_text(text: str, principal, session, channel: str) -> str:

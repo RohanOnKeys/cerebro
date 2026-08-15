@@ -52,11 +52,13 @@ def test_third_message_with_valid_answer_enrolls(db_session):
     handle_unknown_sender(db_session, "telegram", "tg_1", "hi there")
     handle_unknown_sender(db_session, "telegram", "tg_1", "ACME1")
 
-    reply = handle_unknown_sender(db_session, "telegram", "tg_1", "CLIENT jane@example.com")
+    reply = handle_unknown_sender(db_session, "telegram", "tg_1", "Jane Doe jane@example.com")
 
     assert "enrolled as client" in reply.lower()
+    assert "welcome, jane doe" in reply.lower()
     principal = db_session.query(Principal).one()
     assert principal.email == "jane@example.com"
+    assert principal.display_name == "Jane Doe"
     org = db_session.query(Org).filter(Org.join_code == "ACME1").one()
     assert principal.org_id == org.id
     binding = db_session.query(ChannelBinding).one()
@@ -77,7 +79,7 @@ def test_unparseable_usertype_answer_reprompts_without_enrolling(db_session):
 def test_resolve_principal_works_after_enrollment_completes(db_session):
     handle_unknown_sender(db_session, "telegram", "tg_1", "hi there")
     handle_unknown_sender(db_session, "telegram", "tg_1", "ACME1")
-    handle_unknown_sender(db_session, "telegram", "tg_1", "CLIENT jane@example.com")
+    handle_unknown_sender(db_session, "telegram", "tg_1", "Jane Doe jane@example.com")
 
     principal = resolve_principal(db_session, "telegram", "tg_1")
 
@@ -102,12 +104,12 @@ def test_identity_persists_across_channels_via_matching_email(db_session):
     """Jane enrolls on Telegram, then messages Discord for the first time - same identity."""
     handle_unknown_sender(db_session, "telegram", "tg_1", "hi")
     handle_unknown_sender(db_session, "telegram", "tg_1", "ACME1")
-    handle_unknown_sender(db_session, "telegram", "tg_1", "CLIENT jane@example.com")
+    handle_unknown_sender(db_session, "telegram", "tg_1", "Jane Doe jane@example.com")
     telegram_principal = resolve_principal(db_session, "telegram", "tg_1")
 
     handle_unknown_sender(db_session, "discord", "dc_1", "hello")
     handle_unknown_sender(db_session, "discord", "dc_1", "ACME1")
-    handle_unknown_sender(db_session, "discord", "dc_1", "CLIENT jane@example.com")
+    handle_unknown_sender(db_session, "discord", "dc_1", "Jane Doe jane@example.com")
     discord_principal = resolve_principal(db_session, "discord", "dc_1")
 
     assert telegram_principal.id == discord_principal.id
@@ -119,11 +121,11 @@ def test_two_different_codes_create_two_different_orgs(db_session):
     """A second sender with a different code lands in a different, new org."""
     handle_unknown_sender(db_session, "telegram", "tg_1", "hi")
     handle_unknown_sender(db_session, "telegram", "tg_1", "ACME1")
-    handle_unknown_sender(db_session, "telegram", "tg_1", "CLIENT jane@example.com")
+    handle_unknown_sender(db_session, "telegram", "tg_1", "Jane Doe jane@example.com")
 
     handle_unknown_sender(db_session, "slack", "sl_1", "hi")
     handle_unknown_sender(db_session, "slack", "sl_1", "OTHERCO")
-    handle_unknown_sender(db_session, "slack", "sl_1", "CLIENT bob@example.com")
+    handle_unknown_sender(db_session, "slack", "sl_1", "Bob Doe bob@example.com")
 
     jane = resolve_principal(db_session, "telegram", "tg_1")
     bob = resolve_principal(db_session, "slack", "sl_1")
@@ -140,7 +142,7 @@ def test_reusing_an_existing_code_joins_the_same_org(db_session):
 
     handle_unknown_sender(db_session, "discord", "dc_2", "hi")
     handle_unknown_sender(db_session, "discord", "dc_2", "acme1")  # lowercase, same code
-    handle_unknown_sender(db_session, "discord", "dc_2", "CLIENT bob@example.com")
+    handle_unknown_sender(db_session, "discord", "dc_2", "Bob Doe bob@example.com")
 
     jane = resolve_principal(db_session, "telegram", "tg_1")
     bob = resolve_principal(db_session, "discord", "dc_2")
