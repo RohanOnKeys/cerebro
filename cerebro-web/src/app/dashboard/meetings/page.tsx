@@ -41,7 +41,7 @@ export default async function MeetingsPage() {
   ];
 
   return (
-    <DashboardShell active="meetings" stats={stats} usingMockData={data.usingMockData}>
+    <DashboardShell active="meetings" stats={stats}>
       <MeetingsPanel meetings={meetings} reminders={data.scheduledReminders} />
       <PastMeetingsPanel meetings={data.pastMeetings} />
     </DashboardShell>

@@ -75,24 +75,29 @@ def whoami(*, principal: Principal, **_: Any) -> dict[str, str]:
 def enroll_principal(
     *,
     session: Session,
-    org_id: str,
+    principal: Principal,
     channel: str,
     channel_id: str,
     conversation_id: str,
+    org_id: str | None = None,
     **_: Any,
 ) -> dict[str, str]:
-    """Enroll an unknown sender via the existing enrollment service.
+    """Enroll a different, not-yet-known sender via the existing enrollment service.
 
     Creates a CLIENT principal and pending channel binding. Restricted to
-    team/ops populations in the registry (not CLIENT self-service).
+    team/ops populations in the registry (not CLIENT self-service). org_id
+    defaults to the calling principal's own org - a team member enrolling a
+    new external contact is virtually always adding them to their own team,
+    not an arbitrary other org by raw id, so there's no reason to ask for it.
     """
-    principal, binding = enroll_unknown_sender(
-        session, org_id, channel, channel_id, conversation_id
+    target_org_id = org_id or principal.org_id
+    new_principal, binding = enroll_unknown_sender(
+        session, target_org_id, channel, channel_id, conversation_id
     )
     return {
-        "principal_id": principal.id,
+        "principal_id": new_principal.id,
         "binding_id": binding.id,
-        "population": principal.population.value,
+        "population": new_principal.population.value,
         "verified": binding.verified,
     }
 
@@ -1169,16 +1174,31 @@ TOOLS: dict[str, ToolSpec] = {
     ),
     "enroll_principal": ToolSpec(
         name="enroll_principal",
-        description="Enroll an unknown sender as a CLIENT principal with a pending binding.",
+        description=(
+            "Enroll a DIFFERENT, not-yet-known sender (identified by a raw channel "
+            "id you already have from elsewhere - a Telegram/Discord/Slack id or "
+            "email address) as a CLIENT with a verified binding. This is NOT for "
+            "the principal currently talking to you to change their own type or "
+            "re-enroll themselves - there is no self-service tool for that. If "
+            "the caller asks to be enrolled/re-enrolled/switched to a different "
+            "population, refuse and explain the limit instead of asking them for "
+            "their own org_id, channel, channel_id, or conversation_id."
+        ),
         parameters={
             "type": "object",
             "properties": {
-                "org_id": {"type": "string"},
+                "org_id": {
+                    "type": "string",
+                    "description": (
+                        "Optional - defaults to the calling principal's own org. "
+                        "Only pass this to enroll someone into a different org."
+                    ),
+                },
                 "channel": {"type": "string"},
                 "channel_id": {"type": "string"},
                 "conversation_id": {"type": "string"},
             },
-            "required": ["org_id", "channel", "channel_id", "conversation_id"],
+            "required": ["channel", "channel_id", "conversation_id"],
             "additionalProperties": False,
         },
         handler=enroll_principal,

@@ -22,7 +22,7 @@ export default async function ProjectsPage() {
   ];
 
   return (
-    <DashboardShell active="projects" stats={stats} usingMockData={data.usingMockData}>
+    <DashboardShell active="projects" stats={stats}>
       <ActiveProjectsPanel projects={projects} />
       <ProjectTimelinePanel projects={projects} />
     </DashboardShell>

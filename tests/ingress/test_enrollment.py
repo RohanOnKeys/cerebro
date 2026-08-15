@@ -89,21 +89,54 @@ def test_enroll_multiple_senders(db_session, test_org):
 # --- parse_enrollment_answer (pure) ---
 
 
-def test_parse_client_answer():
-    assert parse_enrollment_answer("CLIENT jane@example.com") == (
+def test_parse_default_answer_is_client_with_name():
+    """No leading keyword: defaults to CLIENT, name is everything before the email."""
+    assert parse_enrollment_answer("Jane Doe jane@example.com") == (
         Population.CLIENT,
         "jane@example.com",
+        "Jane Doe",
     )
 
 
+def test_parse_default_answer_accepts_comma_before_email():
+    assert parse_enrollment_answer("Jane Doe, jane@example.com") == (
+        Population.CLIENT,
+        "jane@example.com",
+        "Jane Doe",
+    )
+
+
+def test_parse_explicit_client_keyword_with_name():
+    assert parse_enrollment_answer("CLIENT Jane Doe jane@example.com") == (
+        Population.CLIENT,
+        "jane@example.com",
+        "Jane Doe",
+    )
+
+
+def test_parse_client_keyword_without_name_returns_none():
+    """CLIENT is only useful alongside a name now - bare 'CLIENT <email>' has
+    nothing to use as display_name, so it's treated the same as missing input."""
+    assert parse_enrollment_answer("CLIENT jane@example.com") is None
+
+
+def test_parse_answer_with_no_name_text_returns_none():
+    assert parse_enrollment_answer("jane@example.com") is None
+
+
 def test_parse_team_answer_defaults_to_ops():
-    assert parse_enrollment_answer("TEAM jane@example.com") == (Population.OPS, "jane@example.com")
+    assert parse_enrollment_answer("TEAM jane@example.com") == (
+        Population.OPS,
+        "jane@example.com",
+        "",
+    )
 
 
 def test_parse_team_with_specific_role():
     assert parse_enrollment_answer("TEAM DEV jane@example.com") == (
         Population.DEV,
         "jane@example.com",
+        "",
     )
 
 
@@ -111,13 +144,15 @@ def test_parse_bare_role_without_team_prefix():
     assert parse_enrollment_answer("LEAD jane@example.com") == (
         Population.LEAD,
         "jane@example.com",
+        "",
     )
 
 
 def test_parse_answer_is_case_insensitive():
-    assert parse_enrollment_answer("client JANE@example.com") == (
-        Population.CLIENT,
+    assert parse_enrollment_answer("team JANE@example.com") == (
+        Population.OPS,
         "JANE@example.com",
+        "",
     )
 
 
@@ -125,8 +160,15 @@ def test_parse_answer_missing_email_returns_none():
     assert parse_enrollment_answer("CLIENT") is None
 
 
-def test_parse_answer_unrecognized_role_returns_none():
-    assert parse_enrollment_answer("PIRATE jane@example.com") is None
+def test_parse_unrecognized_word_is_treated_as_a_name_not_a_role():
+    """Anything that isn't TEAM/a role keyword falls through to the default
+    CLIENT-with-name path, same as any other name - 'Pirate' is as valid a
+    first name as 'Jane'."""
+    assert parse_enrollment_answer("Pirate jane@example.com") == (
+        Population.CLIENT,
+        "jane@example.com",
+        "Pirate",
+    )
 
 
 def test_parse_answer_empty_text_returns_none():
@@ -199,6 +241,22 @@ def test_complete_enrollment_second_channel_binds_to_same_principal(db_session, 
     assert discord_binding.principal_id == telegram_binding.principal_id
     assert discord_binding.channel == "discord"
     assert telegram_binding.channel == "telegram"
+
+
+def test_complete_enrollment_stores_the_captured_name(db_session, test_org):
+    pending = _start_and_code(
+        db_session, channel="telegram", channel_id="tg_name", conversation_id="c_name"
+    )
+
+    principal, _binding, _claim = complete_enrollment(
+        db_session,
+        pending=pending,
+        population=Population.CLIENT,
+        email="jane@example.com",
+        name="Jane Doe",
+    )
+
+    assert principal.display_name == "Jane Doe"
 
 
 def test_complete_enrollment_clears_the_pending_row(db_session, test_org):

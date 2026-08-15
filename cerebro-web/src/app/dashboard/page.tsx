@@ -24,7 +24,7 @@ export default async function DashboardOverviewPage() {
   const data = await getDashboardData();
 
   return (
-    <DashboardShell active="dashboard" stats={data.statStrip} usingMockData={data.usingMockData}>
+    <DashboardShell active="dashboard" stats={data.statStrip}>
       <ChannelStatusPanel channels={data.channelStatuses} />
       <ActiveProjectsPanel
         projects={data.activeProjects}

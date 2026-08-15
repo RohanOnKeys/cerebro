@@ -38,7 +38,7 @@ export default async function LedgerPage() {
   ];
 
   return (
-    <DashboardShell active="ledger" stats={stats} usingMockData={data.usingMockData}>
+    <DashboardShell active="ledger" stats={stats}>
       <LedgerFilters entries={entries} />
     </DashboardShell>
   );

@@ -37,7 +37,7 @@ export default async function CiRunsPage() {
   ];
 
   return (
-    <DashboardShell active="ci-runs" stats={stats} usingMockData={data.usingMockData}>
+    <DashboardShell active="ci-runs" stats={stats}>
       <CiRunsPanel runs={runs} />
     </DashboardShell>
   );

@@ -24,7 +24,7 @@ export default async function SettingsPage() {
   ];
 
   return (
-    <DashboardShell active="settings" stats={stats} usingMockData={data.usingMockData}>
+    <DashboardShell active="settings" stats={stats}>
       <ChannelConfigPanel configs={data.channelConfig} />
       <NotificationPreferencesPanel preferences={data.notificationPreferences} />
       <OrganizationDetailsPanel organization={data.organization} />

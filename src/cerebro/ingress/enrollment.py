@@ -36,12 +36,15 @@ CODE_PROMPT = (
     "your team."
 )
 
-# Stage 2: asked once the team code resolves to an org.
+# Stage 2: asked once the team code resolves to an org. Defaults to CLIENT -
+# most people messaging an unrecognized business bot are customers, not
+# staff - so the common case only ever has to answer with a name and an
+# email, nothing about roles or channels. Team members opt in explicitly
+# with a leading TEAM (or a bare role) keyword.
 ENROLLMENT_PROMPT = (
-    "Are you a CLIENT or on the TEAM? Reply with your answer and your "
-    "email so your identity carries across every channel you message us on, "
-    "e.g. 'CLIENT jane@example.com' or 'TEAM jane@example.com' "
-    "(or 'TEAM DEV jane@example.com' to name a specific role)."
+    "What's your name and email? Reply with both so your identity carries "
+    "across every channel you message us on, e.g. 'Jane Doe jane@example.com'. "
+    "(Joining as a team member? Start with TEAM, e.g. 'TEAM DEV jane@example.com'.)"
 )
 
 
@@ -105,12 +108,20 @@ def enroll_unknown_sender(
     return principal, binding
 
 
-def parse_enrollment_answer(text: str) -> tuple[Population, str] | None:
-    """Pure: parse 'CLIENT you@x.com' / 'TEAM you@x.com' / 'TEAM DEV you@x.com'.
+def parse_enrollment_answer(text: str) -> tuple[Population, str, str] | None:
+    """Pure: parse an enrollment reply into (population, email, name).
 
-    Also accepts a bare role ('DEV you@x.com') for people who skip the word
-    TEAM. Returns None when the reply doesn't contain both a recognizable
-    population and an email.
+    Default (no leading keyword) is CLIENT, and everything before the email
+    is taken as the name: 'Jane Doe jane@x.com' -> (CLIENT, 'jane@x.com',
+    'Jane Doe'). An explicit 'CLIENT Jane Doe jane@x.com' also works, the
+    keyword is just stripped.
+
+    Team members opt in explicitly with 'TEAM you@x.com' / 'TEAM DEV you@x.com'
+    (or a bare role keyword, 'DEV you@x.com') - no name captured there, matching
+    the pre-existing team enrollment shape; name is a CLIENT-only ask.
+
+    Returns None when the reply doesn't contain a usable email (or, for the
+    default CLIENT case, no name text ahead of it).
     """
     stripped = text.strip()
     if not stripped:
@@ -121,20 +132,24 @@ def parse_enrollment_answer(text: str) -> tuple[Population, str] | None:
         return None
     email = email_match.group(0)
 
-    head_parts = stripped[: email_match.start()].split()
-    if not head_parts:
-        return None
+    head = stripped[: email_match.start()].strip().rstrip(",").strip()
+    head_parts = head.split()
 
-    first = head_parts[0].upper()
-    if first == "CLIENT":
-        return Population.CLIENT, email
-    if first == "TEAM":
-        if len(head_parts) >= 2 and head_parts[1].upper() in _TEAM_ROLE_ALIASES:
-            return _TEAM_ROLE_ALIASES[head_parts[1].upper()], email
-        return Population.OPS, email  # least-privileged team default
-    if first in _TEAM_ROLE_ALIASES:
-        return _TEAM_ROLE_ALIASES[first], email
-    return None
+    if head_parts and head_parts[0].upper() == "TEAM":
+        rest = head_parts[1:]
+        if rest and rest[0].upper() in _TEAM_ROLE_ALIASES:
+            return _TEAM_ROLE_ALIASES[rest[0].upper()], email, ""
+        return Population.OPS, email, ""  # least-privileged team default
+    if head_parts and head_parts[0].upper() in _TEAM_ROLE_ALIASES:
+        return _TEAM_ROLE_ALIASES[head_parts[0].upper()], email, ""
+
+    if head_parts and head_parts[0].upper() == "CLIENT":
+        name = " ".join(head_parts[1:]).strip()
+        return (Population.CLIENT, email, name) if name else None
+
+    if not head:
+        return None
+    return Population.CLIENT, email, head
 
 
 def get_pending_enrollment(
@@ -186,7 +201,7 @@ def apply_join_code(
 
 
 def find_or_create_principal_by_email(
-    session: Session, *, org_id: str, population: Population, email: str
+    session: Session, *, org_id: str, population: Population, email: str, display_name: str = ""
 ) -> Principal:
     """Find an existing principal by (org, email), else create one.
 
@@ -200,12 +215,16 @@ def find_or_create_principal_by_email(
         .first()
     )
     if existing is not None:
+        if display_name and not existing.display_name:
+            existing.display_name = display_name
+            session.commit()
         return existing
     principal = Principal(
         id=str(uuid.uuid4()),
         org_id=org_id,
         population=population,
         email=email,
+        display_name=display_name or None,
         created_at=datetime.now(UTC),
     )
     session.add(principal)
@@ -234,7 +253,12 @@ def apply_enrollment_population(
 
 
 def complete_enrollment(
-    session: Session, *, pending: PendingEnrollment, population: Population, email: str
+    session: Session,
+    *,
+    pending: PendingEnrollment,
+    population: Population,
+    email: str,
+    name: str = "",
 ) -> tuple[Principal, ChannelBinding, RoleClaim | None]:
     """Resolve a pending enrollment into (principal, binding, pending_claim) and clear it.
 
@@ -252,7 +276,11 @@ def complete_enrollment(
         Population.OPS if is_new and population in GATED_POPULATIONS else population
     )
     principal = find_or_create_principal_by_email(
-        session, org_id=pending.org_id, population=seed_population, email=email
+        session,
+        org_id=pending.org_id,
+        population=seed_population,
+        email=email,
+        display_name=name,
     )
     binding = ChannelBinding(
         id=str(uuid.uuid4()),

@@ -127,8 +127,21 @@ def _session() -> Session:
 def _get_org(session: Session) -> Org:
     """This admin API has always assumed a single org (see module
     docstring — /admin/members, /admin/ledger, etc. never filter by
-    org_id either), so "the org" is just the first row."""
-    org = session.query(Org).first()
+    org_id either), so "the org" is whichever one is actually live in the
+    channels right now: the org behind the most recent Message. Falls back
+    to the most recently created org (e.g. right after `create_team`/a
+    join-code enrollment, before anyone has sent a message yet). Picking
+    the literal first-ever-created org here previously meant the Settings
+    page stayed pinned to old test data forever once a second org existed."""
+    latest_active_org_id = session.scalar(
+        select(Message.org_id).order_by(Message.created_at.desc()).limit(1)
+    )
+    if latest_active_org_id is not None:
+        org = session.get(Org, latest_active_org_id)
+        if org is not None:
+            return org
+
+    org = session.query(Org).order_by(Org.created_at.desc()).first()
     if org is None:
         raise HTTPException(
             status_code=404,
