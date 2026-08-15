@@ -25,18 +25,28 @@ explanation of each):
   is null (see migration 0015) — nothing backfills display_name today.
 - /admin/meetings: uses existing Meeting.provider / Meeting.join_url
   (added in 0014_role_claims_and_meeting_providers).
+
+Mutations (approvals approve/reject, channel-config reconnect, notification
+preferences, organization + danger zone) are real, DB-backed writes, not
+read-only like the above — see each route's docstring for what it actually
+changes and, where relevant, what it honestly does NOT yet cause elsewhere
+in the system (e.g. Danger Zone's flags aren't polled by the caspian-sdk
+channel gateway, a separate process).
 """
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from cerebro.admin.auth import require_admin_token
+from cerebro.config import settings as app_settings
 from cerebro.db.models import (
     ChannelBinding,
     CiRun,
@@ -44,12 +54,19 @@ from cerebro.db.models import (
     Meeting,
     MeetingAttendee,
     Message,
+    NotificationPreference,
+    Org,
     Principal,
     RoleClaim,
     RoleClaimStatus,
 )
 from cerebro.db.session import get_session
 from cerebro.registry import TOOLS
+from cerebro.verify.role_claims import (
+    RoleClaimRejected,
+    approve_role_claim_as_admin,
+    deny_role_claim_as_admin,
+)
 
 router = APIRouter(
     prefix="/admin",
@@ -92,8 +109,32 @@ PROJECTS: list[dict[str, str]] = [
 ]
 
 
+# Seeded into notification_preferences on first read for an org that has
+# none yet (see get_notification_preferences) — kept here rather than in
+# the migration so the default set can change without a new migration.
+DEFAULT_NOTIFICATION_PREFS: list[tuple[str, str, bool]] = [
+    ("project_status_changed", "Notify me when a project changes status", True),
+    ("new_pending_approval", "Notify me on new pending approvals", True),
+    ("every_ci_run", "Notify me on every CI run, including passes", False),
+    ("daily_ledger_summary", "Daily ledger summary email", True),
+]
+
+
 def _session() -> Session:
     return get_session()
+
+
+def _get_org(session: Session) -> Org:
+    """This admin API has always assumed a single org (see module
+    docstring — /admin/members, /admin/ledger, etc. never filter by
+    org_id either), so "the org" is just the first row."""
+    org = session.query(Org).first()
+    if org is None:
+        raise HTTPException(
+            status_code=404,
+            detail="no org exists yet (nothing has enrolled through a channel)",
+        )
+    return org
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -482,3 +523,216 @@ def get_allowlist() -> dict[str, Any]:
             }
         )
     return {"items": rows}
+
+
+@router.get("/meetings/past")
+def get_past_meetings(limit: int = Query(default=50, le=200)) -> dict[str, Any]:
+    session = _session()
+    try:
+        now = _naive_utc_now()
+        meetings = session.scalars(
+            select(Meeting)
+            .where(Meeting.starts_at < now, Meeting.status != "cancelled")
+            .order_by(Meeting.starts_at.desc())
+            .limit(limit)
+        ).all()
+        organizer_ids = {m.organizer_principal_id for m in meetings}
+        organizers = (
+            {
+                p.id: p
+                for p in session.scalars(
+                    select(Principal).where(Principal.id.in_(organizer_ids))
+                ).all()
+            }
+            if organizer_ids
+            else {}
+        )
+        return {
+            "items": [
+                {
+                    "id": m.id,
+                    "title": m.title,
+                    "endedAt": _iso(m.starts_at),
+                    "organizer": (
+                        (
+                            organizers[m.organizer_principal_id].display_name
+                            or organizers[m.organizer_principal_id].email
+                            or m.organizer_principal_id
+                        )
+                        if m.organizer_principal_id in organizers
+                        else m.organizer_principal_id
+                    ),
+                    "provider": m.provider or None,
+                }
+                for m in meetings
+            ]
+        }
+    finally:
+        session.close()
+
+
+@router.post("/approvals/{claim_id}/approve")
+def approve_pending_approval(claim_id: str) -> dict[str, Any]:
+    """Real mutation: promotes the claimant's population. See
+    verify.role_claims.approve_role_claim_as_admin for why this doesn't
+    need (and doesn't check) a specific approving Principal the way the
+    chat APPROVE command does — the admin bearer token is the authority."""
+    session = _session()
+    try:
+        try:
+            return approve_role_claim_as_admin(session, claim_id=claim_id)
+        except RoleClaimRejected as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        session.close()
+
+
+@router.post("/approvals/{claim_id}/reject")
+def reject_pending_approval(claim_id: str) -> dict[str, Any]:
+    session = _session()
+    try:
+        try:
+            return deny_role_claim_as_admin(session, claim_id=claim_id)
+        except RoleClaimRejected as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        session.close()
+
+
+def _channel_config_item(channel: str) -> dict[str, Any]:
+    """Honest limitation: there is no per-channel credential anywhere in
+    this codebase — caspian-sdk's single `caspian_api_key` covers Telegram/
+    Discord/Slack/Email together (see the caspian integration guide), so
+    every channel reports the same configured/missing state. A per-channel
+    credential model doesn't exist to report on."""
+    configured = bool(app_settings.caspian_api_key.strip())
+    return {
+        "channel": channel,
+        "apiKeyStatus": "configured" if configured else "missing",
+    }
+
+
+@router.get("/channel-config")
+def get_channel_config() -> dict[str, Any]:
+    return {"items": [_channel_config_item(c) for c in KNOWN_CHANNELS]}
+
+
+@router.post("/channel-config/{channel}/reconnect")
+def reconnect_channel(channel: str) -> dict[str, Any]:
+    """There's nothing this HTTP process can actually do to reconnect a
+    caspian-sdk channel socket (that's a separate running process) or
+    rewrite the deployed CASPIAN_API_KEY. What "Reconnect" honestly does:
+    re-check the same real config state GET /channel-config reports, so an
+    admin who just fixed the deployed credential and redeployed sees that
+    reflected without needing a full dashboard refresh."""
+    if channel not in KNOWN_CHANNELS:
+        raise HTTPException(status_code=404, detail=f"unknown channel {channel}")
+    return _channel_config_item(channel)
+
+
+@router.get("/notification-preferences")
+def get_notification_preferences() -> dict[str, Any]:
+    session = _session()
+    try:
+        org = _get_org(session)
+        rows = session.scalars(
+            select(NotificationPreference)
+            .where(NotificationPreference.org_id == org.id)
+            .order_by(NotificationPreference.created_at.asc())
+        ).all()
+
+        if not rows:
+            # Lazy-seed: first read for this org creates the default set,
+            # rather than requiring a separate seed script/migration data
+            # load before the Settings page has anything to show.
+            now = datetime.now(UTC)
+            rows = [
+                NotificationPreference(
+                    id=str(uuid.uuid4()),
+                    org_id=org.id,
+                    key=key,
+                    label=label,
+                    enabled=enabled,
+                    created_at=now,
+                )
+                for key, label, enabled in DEFAULT_NOTIFICATION_PREFS
+            ]
+            session.add_all(rows)
+            session.commit()
+
+        return {
+            "items": [
+                {"id": r.id, "label": r.label, "enabled": r.enabled} for r in rows
+            ]
+        }
+    finally:
+        session.close()
+
+
+class SetNotificationPreference(BaseModel):
+    enabled: bool
+
+
+@router.post("/notification-preferences/{pref_id}/set")
+def set_notification_preference(
+    pref_id: str, body: SetNotificationPreference
+) -> dict[str, Any]:
+    """Sets to the given value rather than blindly toggling — a checkbox
+    that a double-click or a stale UI re-fires against should still land
+    on the state the user actually clicked to, not its opposite."""
+    session = _session()
+    try:
+        pref = session.get(NotificationPreference, pref_id)
+        if pref is None:
+            raise HTTPException(status_code=404, detail=f"unknown preference {pref_id}")
+        pref.enabled = body.enabled
+        session.commit()
+        return {"id": pref.id, "label": pref.label, "enabled": pref.enabled}
+    finally:
+        session.close()
+
+
+@router.get("/organization")
+def get_organization() -> dict[str, Any]:
+    session = _session()
+    try:
+        org = _get_org(session)
+        return {
+            "name": org.name,
+            "adminContact": org.admin_contact or "",
+            "billingTier": org.billing_tier or "Free",
+            "joinCode": org.join_code,
+        }
+    finally:
+        session.close()
+
+
+@router.post("/organization/revoke-access")
+def revoke_integration_access() -> dict[str, Any]:
+    """Danger Zone, row 1 ("revoke access for a connected integration").
+    Flips orgs.channels_active — a real, persisted flag. See migration
+    0016 and the Org model comment for the honest limitation: nothing
+    downstream polls this yet to actually drop a live channel connection."""
+    session = _session()
+    try:
+        org = _get_org(session)
+        org.channels_active = False
+        session.commit()
+        return {"channelsActive": org.channels_active}
+    finally:
+        session.close()
+
+
+@router.post("/organization/deactivate")
+def deactivate_workspace_integration() -> dict[str, Any]:
+    """Danger Zone, row 2 ("deactivate this workspace's integration
+    entirely"). Flips orgs.workspace_active. Same honest limitation as
+    revoke_integration_access above."""
+    session = _session()
+    try:
+        org = _get_org(session)
+        org.workspace_active = False
+        session.commit()
+        return {"workspaceActive": org.workspace_active}
+    finally:
+        session.close()

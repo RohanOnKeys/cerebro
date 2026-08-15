@@ -1,17 +1,8 @@
-import { ChannelRow } from "@/components/landing/ChannelRow";
-import { CoreCapabilities } from "@/components/landing/CoreCapabilities";
-import { Footer } from "@/components/landing/Footer";
-import { Hero } from "@/components/landing/Hero";
-import { SecondaryCapabilities } from "@/components/landing/SecondaryCapabilities";
+import { redirect } from "next/navigation";
 
-export default function LandingPage() {
-  return (
-    <main>
-      <Hero />
-      <ChannelRow />
-      <CoreCapabilities />
-      <SecondaryCapabilities />
-      <Footer />
-    </main>
-  );
+// This app is the team dashboard only — the client-facing marketing site
+// now lives in the separate cerebro-client app. Nothing renders at the
+// bare domain, so send visitors straight to the dashboard overview.
+export default function RootPage() {
+  redirect("/dashboard");
 }

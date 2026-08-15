@@ -19,11 +19,11 @@ const workSans = Work_Sans({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   title: {
-    default: "Cerebro — Agency Orchestration",
+    default: "Cerebro — Team dashboard",
     template: "%s — Cerebro",
   },
   description:
-    "Cerebro is the company second brain: one agent across WhatsApp, Telegram, Discord, Slack, and Email, with verified identity, scheduling, notification routing, and CI as a conversation.",
+    "The internal admin console for the team running Cerebro: live channel status, projects, members and roles, meetings, CI runs, and the audit ledger.",
 };
 
 export default function RootLayout({

@@ -26,7 +26,7 @@ def db_session():
 @pytest.fixture
 def client_principal(db_session):
     """Create a CLIENT principal for handler tests."""
-    org = Org(id="org_1", name="Test Org", created_at=datetime.now(UTC))
+    org = Org(id="org_1", name="Test Org", join_code="TESTORG", created_at=datetime.now(UTC))
     db_session.add(org)
     principal = Principal(
         id="principal_client",
@@ -112,3 +112,48 @@ def test_enroll_principal_handler_uses_enrollment_service(db_session, client_pri
     assert result["verified"] == "verified"
     assert result["principal_id"]
     assert result["binding_id"]
+
+
+def test_create_team_allowed_populations_are_team_only():
+    allowed = TOOLS["create_team"].allowed_populations
+
+    assert Population.CLIENT not in allowed
+    assert allowed == frozenset(
+        {Population.OPS, Population.DEV, Population.LEAD, Population.ADMIN}
+    )
+
+
+def test_create_team_handler_auto_generates_code(db_session, client_principal):
+    result = TOOLS["create_team"].handler(
+        session=db_session, principal=client_principal, name="Acme Inc"
+    )
+
+    assert result["name"] == "Acme Inc"
+    assert "join_code" in result and len(result["join_code"]) == 6
+    org = db_session.query(Org).filter(Org.id == result["org_id"]).one()
+    assert org.name == "Acme Inc"
+    assert org.join_code == result["join_code"]
+
+
+def test_create_team_handler_accepts_explicit_code(db_session, client_principal):
+    result = TOOLS["create_team"].handler(
+        session=db_session, principal=client_principal, name="Acme Inc", code="acme-hq"
+    )
+
+    assert result["join_code"] == "ACME-HQ"
+
+
+def test_create_team_handler_rejects_code_already_in_use(db_session, client_principal):
+    """A CREATE that names an existing team's code is refused, not silently
+    treated as joining that other team."""
+    first = TOOLS["create_team"].handler(
+        session=db_session, principal=client_principal, name="Acme Inc", code="TAKEN"
+    )
+    assert "error" not in first
+
+    second = TOOLS["create_team"].handler(
+        session=db_session, principal=client_principal, name="Someone Else", code="taken"
+    )
+
+    assert second["error"] == "code_already_in_use"
+    assert second["code"] == "TAKEN"

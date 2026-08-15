@@ -4,6 +4,10 @@ import type { Config } from "tailwindcss";
 // Keep this file as the single source of truth for color/type — components
 // should reference these tokens (bg-cerebro-bg, text-cerebro-accent, etc.)
 // rather than hardcoding hex values, so a future rebrand is a one-file change.
+//
+// This is the team dashboard app's copy of the token set. The client
+// (marketing/landing) app, cerebro-client, has its own copy — it has no
+// status/table UI, so it doesn't carry the status colors or Archivo below.
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
@@ -19,10 +23,16 @@ const config: Config = {
           "accent-lightest": "#a8bfd1",
           ink: "#e7e9ec",
           muted: "#9a9fa6",
+          // Status colors, team-dashboard-only: the client landing page has no
+          // status concept, so these come straight from the approved Cerebro
+          // Dashboard spec rather than the existing blue-grey accent ramp.
+          success: "#8fb08a",
+          warning: "#c2b26f",
+          danger: "#c2896f",
         },
       },
       fontFamily: {
-        // Archivo: confident grotesque, used for headlines and section titles.
+        // Archivo: confident grotesque, used for dashboard headlines and section titles.
         display: ["var(--font-archivo)", "system-ui", "sans-serif"],
         // Work Sans: humanist, used for all body copy, labels, and table data.
         sans: ["var(--font-work-sans)", "system-ui", "sans-serif"],

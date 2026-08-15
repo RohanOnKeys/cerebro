@@ -24,8 +24,8 @@ export function ChannelStatusPanel({ channels }: { channels: ChannelStatus[] }) 
             <span
               className={
                 channel.state === "live"
-                  ? "w-fit bg-cerebro-accent px-2.5 py-1 text-xs font-medium text-cerebro-ink"
-                  : "w-fit border border-cerebro-accent-lighter px-2.5 py-1 text-xs font-medium text-cerebro-accent-lightest"
+                  ? "w-fit bg-cerebro-success px-2.5 py-1 text-xs font-medium text-cerebro-bg"
+                  : "w-fit border border-cerebro-danger px-2.5 py-1 text-xs font-medium text-cerebro-danger"
               }
             >
               {channel.state === "live" ? "Live" : "Reconnect needed"}

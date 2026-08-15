@@ -12,13 +12,16 @@ from cerebro.db.models import Base, Nudge, Org, Population, Principal, RoleClaim
 from cerebro.ingress.commands import CommandVerb, parse_command
 from cerebro.ingress.enrollment import (
     apply_enrollment_population,
+    apply_join_code,
     complete_enrollment,
     start_enrollment,
 )
 from cerebro.verify.role_claims import (
     RoleClaimRejected,
     approve_role_claim,
+    approve_role_claim_as_admin,
     deny_role_claim,
+    deny_role_claim_as_admin,
     mint_role_claim,
     notify_eligible_approvers,
 )
@@ -30,7 +33,7 @@ def db_session():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
-    session.add(Org(id="org_1", name="Test Org", created_at=datetime.now(UTC)))
+    session.add(Org(id="org_1", name="Test Org", join_code="TESTORG", created_at=datetime.now(UTC)))
     session.commit()
     yield session
     session.close()
@@ -210,8 +213,9 @@ def test_complete_enrollment_seeds_ops_and_opens_a_claim_for_gated_population(
 ):
     _principal(db_session, id="p_dev", population=Population.DEV)
     pending = start_enrollment(
-        db_session, org_id="org_1", channel="telegram", channel_id="tg_1", conversation_id="c1"
+        db_session, channel="telegram", channel_id="tg_1", conversation_id="c1"
     )
+    apply_join_code(db_session, pending=pending, code="TESTORG")
 
     principal, _binding, claim = complete_enrollment(
         db_session, pending=pending, population=Population.DEV, email="new@example.com"
@@ -224,8 +228,9 @@ def test_complete_enrollment_seeds_ops_and_opens_a_claim_for_gated_population(
 
 def test_complete_enrollment_ungated_population_behaves_as_before(db_session):
     pending = start_enrollment(
-        db_session, org_id="org_1", channel="telegram", channel_id="tg_1", conversation_id="c1"
+        db_session, channel="telegram", channel_id="tg_1", conversation_id="c1"
     )
+    apply_join_code(db_session, pending=pending, code="TESTORG")
 
     principal, _binding, claim = complete_enrollment(
         db_session, pending=pending, population=Population.CLIENT, email="c@example.com"
@@ -238,3 +243,78 @@ def test_complete_enrollment_ungated_population_behaves_as_before(db_session):
 def test_approve_reject_are_parseable_commands():
     assert parse_command("APPROVE ABCD1234").verb == CommandVerb.APPROVE
     assert parse_command("REJECT ABCD1234").verb == CommandVerb.REJECT
+
+
+def test_admin_approve_flips_population_with_no_approver_principal(db_session):
+    claimant = _principal(db_session, id="p_ops", population=Population.OPS)
+    claim = mint_role_claim(
+        db_session, claimant=claimant, requested_population=Population.ADMIN
+    )
+
+    result = approve_role_claim_as_admin(db_session, claim_id=claim.id)
+
+    assert result["status"] == "approved"
+    assert result["population"] == "admin"
+    refreshed = db_session.query(Principal).filter(Principal.id == "p_ops").one()
+    assert refreshed.population == Population.ADMIN
+    row = db_session.query(RoleClaim).filter(RoleClaim.id == claim.id).one()
+    assert row.approver_principal_id is None
+
+
+def test_admin_approve_works_with_zero_eligible_chat_approvers(db_session):
+    """The exact case that leaves a claim pending forever via chat (see
+    test_zero_eligible_approvers_leaves_claim_pending_forever above) is
+    resolvable from the dashboard, since the admin path skips peer rank."""
+    claimant = _principal(db_session, id="p_ops", population=Population.OPS)
+    claim = mint_role_claim(
+        db_session, claimant=claimant, requested_population=Population.ADMIN
+    )
+    assert notify_eligible_approvers(db_session, claim) == []
+
+    result = approve_role_claim_as_admin(db_session, claim_id=claim.id)
+
+    assert result["status"] == "approved"
+
+
+def test_admin_deny_leaves_claimant_unchanged(db_session):
+    claimant = _principal(db_session, id="p_ops", population=Population.OPS)
+    claim = mint_role_claim(
+        db_session, claimant=claimant, requested_population=Population.DEV
+    )
+
+    result = deny_role_claim_as_admin(db_session, claim_id=claim.id)
+
+    assert result["status"] == "denied"
+    refreshed = db_session.query(Principal).filter(Principal.id == "p_ops").one()
+    assert refreshed.population == Population.OPS
+    row = db_session.query(RoleClaim).filter(RoleClaim.id == claim.id).one()
+    assert row.status == "denied"
+
+
+def test_admin_approve_unknown_claim_id_is_rejected(db_session):
+    with pytest.raises(RoleClaimRejected):
+        approve_role_claim_as_admin(db_session, claim_id="nope")
+
+
+def test_admin_approve_already_resolved_claim_is_rejected(db_session):
+    claimant = _principal(db_session, id="p_ops", population=Population.OPS)
+    claim = mint_role_claim(
+        db_session, claimant=claimant, requested_population=Population.DEV
+    )
+    approve_role_claim_as_admin(db_session, claim_id=claim.id)
+
+    with pytest.raises(RoleClaimRejected):
+        approve_role_claim_as_admin(db_session, claim_id=claim.id)
+
+
+def test_admin_approve_expired_claim_is_rejected(db_session):
+    claimant = _principal(db_session, id="p_ops", population=Population.OPS)
+    now = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+    claim = mint_role_claim(
+        db_session, claimant=claimant, requested_population=Population.DEV, now=now
+    )
+
+    with pytest.raises(RoleClaimRejected):
+        approve_role_claim_as_admin(
+            db_session, claim_id=claim.id, now=now + timedelta(hours=25)
+        )

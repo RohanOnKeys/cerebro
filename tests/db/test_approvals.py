@@ -17,7 +17,7 @@ def db_session():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     session = Session()
-    org = Org(id="org_1", name="Test Org", created_at=datetime.now(UTC))
+    org = Org(id="org_1", name="Test Org", join_code="TESTORG", created_at=datetime.now(UTC))
     session.add(org)
     principal = Principal(
         id="principal_1",

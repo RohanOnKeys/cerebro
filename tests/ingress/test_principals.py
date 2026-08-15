@@ -23,7 +23,7 @@ def db_session():
 @pytest.fixture
 def test_org_and_principal(db_session):
     """Create a test org and principal."""
-    org = Org(id="org_1", name="Test Org", created_at=datetime.now(UTC))
+    org = Org(id="org_1", name="Test Org", join_code="TESTORG", created_at=datetime.now(UTC))
     db_session.add(org)
     db_session.commit()
 

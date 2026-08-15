@@ -1,6 +1,7 @@
 import { formatDate, formatPopulation } from "@/lib/format";
 import type { Member, PendingApproval } from "@/lib/types";
 import { Panel } from "@/components/dashboard/Panel";
+import { PendingApprovalRow } from "@/components/dashboard/PendingApprovalRow";
 
 export function MembersRolesPanel({
   members,
@@ -39,32 +40,7 @@ export function MembersRolesPanel({
 
         <div className="mt-5 divide-y divide-cerebro-border border-y border-cerebro-border">
           {pendingApprovals.map((approval) => (
-            <div
-              key={approval.id}
-              className="grid grid-cols-1 items-center gap-3 py-5 sm:grid-cols-[1.2fr_1fr_1.2fr_auto] sm:gap-4"
-            >
-              <span className="text-sm font-medium text-cerebro-ink">{approval.name}</span>
-              <span className="text-sm text-cerebro-muted">
-                Claiming {formatPopulation(approval.claimedRole)}
-              </span>
-              <span className="text-sm text-cerebro-muted">
-                Approver: {approval.eligibleApprover}
-              </span>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  className="border border-cerebro-accent-light px-4 py-2 text-xs font-medium text-cerebro-accent-lightest transition-colors hover:bg-cerebro-accent"
-                >
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  className="border border-cerebro-border px-4 py-2 text-xs font-medium text-cerebro-muted transition-colors hover:text-cerebro-ink"
-                >
-                  Reject
-                </button>
-              </div>
-            </div>
+            <PendingApprovalRow key={approval.id} approval={approval} />
           ))}
         </div>
       </div>

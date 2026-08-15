@@ -1,10 +1,14 @@
 import "server-only";
 import type {
   AllowlistRow,
+  ChannelConfig,
   ChannelStatus,
   CiRun,
   LedgerEntry,
   Member,
+  NotificationPreference,
+  OrganizationInfo,
+  PastMeeting,
   PendingApproval,
   Project,
   ScheduledReminder,
@@ -74,6 +78,54 @@ interface Items<T> {
   items: T[];
 }
 
+export type MutationResult<T> =
+  | { kind: "mock" }
+  | { kind: "ok"; data: T }
+  | { kind: "error"; status: number };
+
+/**
+ * POSTs a mutation to the Admin API. Used by the Next.js Route Handlers
+ * under src/app/api/** — never called from a Client Component directly
+ * (same server-only guard/reasoning as getJson above). Those route
+ * handlers are what a Client Component actually calls, over same-origin
+ * fetch, so CEREBRO_ADMIN_API_TOKEN never has to leave the server.
+ *
+ * Distinguishes "not configured" (kind: "mock", so the caller can fall
+ * back to a locally-simulated success and keep the dashboard interactive
+ * in demo mode) from a real backend error (kind: "error"), unlike getJson
+ * above which collapses every failure into mock data — a mutation that
+ * silently no-ops on a real backend error should surface that, not pretend
+ * to have succeeded.
+ */
+export async function postAdmin<T>(
+  path: string,
+  body?: unknown,
+): Promise<MutationResult<T>> {
+  const base = apiBaseUrl();
+  const token = adminToken();
+  if (!base || !token) return { kind: "mock" };
+
+  try {
+    const res = await fetch(`${base}${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      console.error(`Cerebro admin API POST ${path} returned ${res.status}`);
+      return { kind: "error", status: res.status };
+    }
+    return { kind: "ok", data: (await res.json()) as T };
+  } catch (error) {
+    console.error(`Cerebro admin API POST ${path} request failed`, error);
+    return { kind: "error", status: 502 };
+  }
+}
+
 /**
  * Fetches every dashboard data source in parallel and returns a fully
  * populated result. `usingMockData` is true if the API isn't configured or
@@ -90,9 +142,13 @@ export async function getDashboardData(): Promise<{
   pendingApprovals: PendingApproval[];
   upcomingMeetings: UpcomingMeeting[];
   scheduledReminders: ScheduledReminder[];
+  pastMeetings: PastMeeting[];
   ciRuns: CiRun[];
   ledgerEntries: LedgerEntry[];
   allowlist: AllowlistRow[];
+  channelConfig: ChannelConfig[];
+  notificationPreferences: NotificationPreference[];
+  organization: OrganizationInfo;
 }> {
   const mock = await import("@/lib/mock-data");
 
@@ -108,9 +164,13 @@ export async function getDashboardData(): Promise<{
     approvals,
     meetings,
     reminders,
+    past,
     ciRuns,
     ledger,
     allowlist,
+    channelConfig,
+    notificationPreferences,
+    organization,
   ] = await Promise.all([
     getJson<Items<StatStripItem>>("/admin/stats"),
     getJson<Items<ChannelStatus>>("/admin/channels"),
@@ -119,9 +179,13 @@ export async function getDashboardData(): Promise<{
     getJson<Items<PendingApproval>>("/admin/approvals/pending"),
     getJson<Items<UpcomingMeeting>>("/admin/meetings"),
     getJson<Items<ScheduledReminder>>("/admin/reminders"),
+    getJson<Items<PastMeeting>>("/admin/meetings/past"),
     getJson<Items<CiRun>>("/admin/ci-runs"),
     getJson<Items<LedgerEntry>>("/admin/ledger"),
     getJson<Items<AllowlistRow>>("/admin/allowlist"),
+    getJson<Items<ChannelConfig>>("/admin/channel-config"),
+    getJson<Items<NotificationPreference>>("/admin/notification-preferences"),
+    getJson<OrganizationInfo>("/admin/organization"),
   ]);
 
   const results = {
@@ -132,9 +196,13 @@ export async function getDashboardData(): Promise<{
     approvals,
     meetings,
     reminders,
+    past,
     ciRuns,
     ledger,
     allowlist,
+    channelConfig,
+    notificationPreferences,
+    organization,
   };
   const anyFailed = Object.values(results).some((r) => r === null);
 
@@ -154,8 +222,12 @@ export async function getDashboardData(): Promise<{
     pendingApprovals: approvals!.items,
     upcomingMeetings: meetings!.items,
     scheduledReminders: reminders!.items,
+    pastMeetings: past!.items,
     ciRuns: ciRuns!.items,
     ledgerEntries: ledger!.items,
     allowlist: allowlist!.items,
+    channelConfig: channelConfig!.items,
+    notificationPreferences: notificationPreferences!.items,
+    organization: organization!,
   };
 }
