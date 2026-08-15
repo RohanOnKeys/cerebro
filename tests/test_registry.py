@@ -114,6 +114,196 @@ def test_enroll_principal_handler_uses_enrollment_service(db_session, client_pri
     assert result["binding_id"]
 
 
+def test_reminder_system_client_only_gets_request_deadline():
+    """The one reminder-system tool CLIENT has access to."""
+    names = {tool.name for tool in TOOLS_FOR[Population.CLIENT]}
+
+    assert "request_deadline" in names
+    assert "set_reminder" not in names
+    assert "list_reminders" not in names
+    assert "cancel_reminder" not in names
+    assert "calendar_view" not in names
+
+
+def test_reminder_system_team_gets_everything():
+    names = {tool.name for tool in TOOLS_FOR[Population.OPS]}
+
+    for tool_name in (
+        "request_deadline",
+        "set_reminder",
+        "list_reminders",
+        "cancel_reminder",
+        "calendar_view",
+    ):
+        assert tool_name in names
+
+
+def test_set_reminder_handler_defaults_target_to_caller(db_session):
+    org = Org(id="org_2", name="Org 2", join_code="ORGTWO", created_at=datetime.now(UTC))
+    db_session.add(org)
+    ops = Principal(
+        id="p_ops", org_id="org_2", population=Population.OPS, created_at=datetime.now(UTC)
+    )
+    db_session.add(ops)
+    db_session.commit()
+
+    result = TOOLS["set_reminder"].handler(
+        session=db_session,
+        principal=ops,
+        subject="check on the client",
+        due_at="2026-08-20T12:00:00+00:00",
+    )
+
+    assert result["principal_id"] == "p_ops"
+    assert result["kind"] == "general"
+    assert result["status"] == "pending"
+
+
+def test_request_deadline_handler_notifies_assignee(db_session):
+    from cerebro.db.models import Order, Task
+
+    org = Org(id="org_3", name="Org 3", join_code="ORGTHREE", created_at=datetime.now(UTC))
+    db_session.add(org)
+    client = Principal(
+        id="p_client3", org_id="org_3", population=Population.CLIENT, created_at=datetime.now(UTC)
+    )
+    dev = Principal(
+        id="p_dev3", org_id="org_3", population=Population.DEV, created_at=datetime.now(UTC)
+    )
+    db_session.add_all([client, dev])
+    order = Order(
+        id="order_3",
+        org_id="org_3",
+        principal_id="p_client3",
+        order_type="general",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(order)
+    task = Task(
+        id="task_3",
+        org_id="org_3",
+        order_id="order_3",
+        number=1,
+        title="do it",
+        designation="dev",
+        assignee_principal_id="p_dev3",
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(task)
+    db_session.commit()
+
+    result = TOOLS["request_deadline"].handler(
+        session=db_session,
+        principal=client,
+        order_id="order_3",
+        due_at="2026-08-22T09:00:00+00:00",
+        note="need this for a client demo",
+    )
+
+    assert result["order_id"] == "order_3"
+    assert len(result["reminders"]) == 1
+    assert result["reminders"][0]["principal_id"] == "p_dev3"
+    assert result["reminders"][0]["kind"] == "deadline"
+
+
+def test_request_deadline_handler_unknown_order_errors(db_session, client_principal):
+    result = TOOLS["request_deadline"].handler(
+        session=db_session,
+        principal=client_principal,
+        order_id="nope",
+        due_at="2026-08-22T09:00:00+00:00",
+    )
+
+    assert result["error"] == "order_not_found"
+
+
+def test_set_reminder_handler_in_seconds_is_computed_server_side(db_session):
+    """The bug this fixes: the model's own arithmetic (plus response
+    latency) can drift a relative offset - asked for 30s, landed on 8s
+    live. in_seconds sidesteps that by computing from the real clock at
+    the moment the tool actually runs, not from a value the model derived
+    earlier in its own turn."""
+    from datetime import timedelta
+
+    org = Org(id="org_secs", name="Org", join_code="ORGSECS", created_at=datetime.now(UTC))
+    db_session.add(org)
+    ops = Principal(
+        id="p_ops_secs", org_id="org_secs", population=Population.OPS,
+        created_at=datetime.now(UTC),
+    )
+    db_session.add(ops)
+    db_session.commit()
+
+    before = datetime.now(UTC)
+    result = TOOLS["set_reminder"].handler(
+        session=db_session, principal=ops, subject="check email", in_seconds=30
+    )
+    after = datetime.now(UTC)
+
+    due_at = datetime.fromisoformat(result["due_at"])
+    if due_at.tzinfo is None:
+        due_at = due_at.replace(tzinfo=UTC)
+    assert before + timedelta(seconds=30) <= due_at <= after + timedelta(seconds=30)
+
+
+def test_set_reminder_handler_rejects_non_positive_in_seconds(db_session, client_principal):
+    result = TOOLS["set_reminder"].handler(
+        session=db_session,
+        principal=client_principal,
+        subject="x",
+        in_seconds=0,
+    )
+
+    assert result["error"] == "invalid_due_at_or_in_seconds"
+
+
+def test_set_reminder_handler_requires_due_at_or_in_seconds(db_session, client_principal):
+    result = TOOLS["set_reminder"].handler(
+        session=db_session, principal=client_principal, subject="x"
+    )
+
+    assert result["error"] == "invalid_due_at_or_in_seconds"
+
+
+def test_request_deadline_handler_accepts_in_seconds(db_session):
+    from datetime import UTC, datetime
+
+    from cerebro.db.models import Order, Task
+
+    org = Org(id="org_secs2", name="Org", join_code="ORGSECS2", created_at=datetime.now(UTC))
+    db_session.add(org)
+    client = Principal(
+        id="p_client_secs", org_id="org_secs2", population=Population.CLIENT,
+        created_at=datetime.now(UTC),
+    )
+    dev = Principal(
+        id="p_dev_secs", org_id="org_secs2", population=Population.DEV,
+        created_at=datetime.now(UTC),
+    )
+    db_session.add_all([client, dev])
+    order = Order(
+        id="order_secs", org_id="org_secs2", principal_id="p_client_secs",
+        order_type="general", created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+    )
+    db_session.add(order)
+    task = Task(
+        id="task_secs", org_id="org_secs2", order_id="order_secs", number=1,
+        title="do it", designation="dev", assignee_principal_id="p_dev_secs",
+        created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+    )
+    db_session.add(task)
+    db_session.commit()
+
+    result = TOOLS["request_deadline"].handler(
+        session=db_session, principal=client, order_id="order_secs", in_seconds=60
+    )
+
+    assert "error" not in result
+    assert result["reminders"][0]["principal_id"] == "p_dev_secs"
+
+
 def test_create_team_allowed_populations_are_team_only():
     allowed = TOOLS["create_team"].allowed_populations
 

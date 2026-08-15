@@ -88,6 +88,19 @@ class NudgeKind(str, Enum):
     INCIDENT_UPDATE = "incident_update"
     ROLE_CLAIM_PENDING = "role_claim_pending"
     ROLE_CLAIM_RESOLVED = "role_claim_resolved"
+    DEADLINE_REQUESTED = "deadline_requested"
+    REMINDER_DUE = "reminder_due"
+
+
+class ReminderKind(str, Enum):
+    GENERAL = "general"
+    DEADLINE = "deadline"
+
+
+class ReminderStatus(str, Enum):
+    PENDING = "pending"
+    FIRED = "fired"
+    CANCELLED = "cancelled"
 
 
 class NudgeStatus(str, Enum):
@@ -580,4 +593,39 @@ class NotificationPreference(Base):
         Index(
             "ix_notification_preferences_org_id_key", "org_id", "key", unique=True
         ),
+    )
+
+
+class Reminder(Base):
+    """Self-hosted reminder/deadline row - no external calendar dependency.
+
+    `kind` distinguishes a general team reminder (registry.set_reminder)
+    from a client-requested deadline (registry.request_deadline). Both are
+    fired the same way, one-shot, by services/reminders.py's clock job:
+    when `due_at` passes, `principal_id` gets a REMINDER_DUE nudge and
+    `status` moves to "fired". A DEADLINE also gets an immediate
+    DEADLINE_REQUESTED nudge at creation time, separate from the due-time
+    firing, so the target hears about it right away, not just when it's due.
+    """
+
+    __tablename__ = "reminders"
+
+    id = Column(String, primary_key=True)
+    org_id = Column(String, ForeignKey("orgs.id"), nullable=False)
+    created_by_principal_id = Column(String, ForeignKey("principals.id"), nullable=False)
+    principal_id = Column(String, ForeignKey("principals.id"), nullable=False)
+    order_id = Column(String, ForeignKey("orders.id"))
+    kind = Column(String, nullable=False, default=ReminderKind.GENERAL.value)
+    subject = Column(String, nullable=False)
+    note = Column(String, nullable=False, default="")
+    due_at = Column(DateTime, nullable=False)
+    status = Column(String, nullable=False, default=ReminderStatus.PENDING.value)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    fired_at = Column(DateTime)
+
+    __table_args__ = (
+        Index("ix_reminders_org_id", "org_id"),
+        Index("ix_reminders_principal_id", "principal_id"),
+        Index("ix_reminders_order_id", "order_id"),
+        Index("ix_reminders_status_due_at", "status", "due_at"),
     )

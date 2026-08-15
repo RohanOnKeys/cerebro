@@ -10,6 +10,7 @@ from cerebro.db.session import SessionLocal
 from cerebro.main import on_message
 from cerebro.services.gap_chase import register_gap_chase_job
 from cerebro.services.meetings import register_meeting_reminder_job
+from cerebro.services.reminders import register_reminder_job
 from cerebro.services.summaries import register_summary_jobs
 from cerebro.services.tasks import register_task_ladder_job
 
@@ -30,6 +31,7 @@ def run_gateway() -> None:
     register_gap_chase_job(scheduler, SessionLocal)
     register_task_ladder_job(scheduler, SessionLocal)
     register_meeting_reminder_job(scheduler, SessionLocal)
+    register_reminder_job(scheduler, SessionLocal)
     register_summary_jobs(scheduler, SessionLocal)
     scheduler.start()
 

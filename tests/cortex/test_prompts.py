@@ -1,9 +1,12 @@
 """Unit tests for population-aware cortex prompt assembly."""
 
+from datetime import UTC, datetime
+
 from cerebro.cortex.prompts import (
     assemble_system_prompt,
     behavior_prompt,
     policy_prompt,
+    time_context,
 )
 from cerebro.db.models import Population
 
@@ -50,6 +53,36 @@ def test_assemble_system_prompt_includes_behavior_and_policy():
     prompt = assemble_system_prompt(Population.CLIENT)
     assert behavior_prompt(Population.CLIENT) in prompt
     assert policy_prompt(Population.CLIENT) in prompt
+
+
+def test_time_context_includes_the_given_moment():
+    """The model needs the current time to resolve 'in 30 seconds', 'tomorrow
+    at 3pm', etc. into an absolute ISO 8601 timestamp itself, instead of
+    asking the user to compute one - see the 2026-08-15 set_reminder bug."""
+    moment = datetime(2026, 8, 15, 17, 50, 0, tzinfo=UTC)
+
+    context = time_context(now=moment)
+
+    assert "2026-08-15T17:50:00Z" in context
+    assert "never ask the user" in context.lower()
+
+
+def test_assemble_system_prompt_includes_time_context():
+    moment = datetime(2026, 8, 15, 17, 50, 0, tzinfo=UTC)
+
+    prompt = assemble_system_prompt(Population.OPS, now=moment)
+
+    assert "2026-08-15T17:50:00Z" in prompt
+
+
+def test_time_context_defaults_to_real_time_when_omitted():
+    before = datetime.now(UTC)
+    context = time_context()
+    after = datetime.now(UTC)
+
+    # Just confirm it produced *some* timestamp in the current year, not that
+    # it's frozen - a real clock read, bounded by the calls around it.
+    assert str(before.year) in context or str(after.year) in context
 
 
 def test_policy_allowed_tools_match_the_registry_for_every_population():

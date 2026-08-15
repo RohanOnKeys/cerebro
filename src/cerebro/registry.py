@@ -521,6 +521,208 @@ def cancel_meeting(
     return meetings_service.serialize_meeting(cancelled)
 
 
+def _resolve_due_at(due_at: str | None, in_seconds: int | None) -> Any:
+    """Prefer in_seconds when given: it's computed here, server-side, from
+    the real clock at the moment the tool actually executes - immune to
+    both model arithmetic mistakes and the latency between when the model
+    read "current time" in its prompt and when the tool call lands, which
+    is exactly what produced a wrong offset live (asked for 30s, landed on
+    8s) even with the correct current-time context already in the prompt.
+    Falls back to the model-computed absolute due_at for anything that's
+    actually an absolute date/time rather than a short relative offset.
+    """
+    import datetime as _dt
+
+    if in_seconds is not None:
+        if in_seconds <= 0:
+            raise ValueError("in_seconds must be positive")
+        return _dt.datetime.now(_dt.UTC) + _dt.timedelta(seconds=in_seconds)
+    if due_at:
+        return _dt.datetime.fromisoformat(due_at)
+    raise ValueError("either due_at or in_seconds is required")
+
+
+def request_deadline(
+    *,
+    session: Session,
+    principal: Principal,
+    order_id: str,
+    due_at: str | None = None,
+    in_seconds: int | None = None,
+    note: str = "",
+    **_: Any,
+) -> dict[str, Any]:
+    """A client (or team member) flags a deadline the team should hit for
+    an order. Open to every population, including CLIENT - this and
+    whatever data-followup reminders gap_chase already generates are the
+    only reminder-system surface a client gets; set_reminder/list_reminders/
+    cancel_reminder/calendar_view are team-only.
+
+    Targets the order's current task assignee, or every org lead if
+    unassigned - same fallback route_client_feedback/block_task use for
+    unassigned-escalation, not a membrane crossing (this is a scheduling
+    fact about the order, not client content being relayed to a
+    population).
+    """
+    from cerebro.db.models import Order, ReminderKind
+    from cerebro.services import reminders as reminders_service
+
+    order = (
+        session.query(Order)
+        .filter(Order.id == order_id, Order.org_id == principal.org_id)
+        .first()
+    )
+    if order is None:
+        return {"error": "order_not_found", "order_id": order_id}
+
+    try:
+        parsed_due_at = _resolve_due_at(due_at, in_seconds)
+    except ValueError as exc:
+        return {"error": "invalid_due_at_or_in_seconds", "detail": str(exc)}
+    due_at_iso = parsed_due_at.isoformat()
+
+    targets = reminders_service.resolve_deadline_targets(
+        session, org_id=principal.org_id, order_id=order_id
+    )
+    if not targets:
+        return {"error": "no_eligible_recipient", "order_id": order_id}
+
+    subject = f"Deadline for order {order_id}"
+    created = []
+    for target in targets:
+        reminder = reminders_service.create_reminder(
+            session,
+            org_id=principal.org_id,
+            created_by_principal_id=principal.id,
+            principal_id=target.id,
+            subject=subject,
+            due_at=parsed_due_at,
+            kind=ReminderKind.DEADLINE,
+            note=note,
+            order_id=order_id,
+        )
+        nudges_service.create_nudge(
+            session,
+            org_id=principal.org_id,
+            principal_id=target.id,
+            order_id=order_id,
+            body=f"Deadline requested for order {order_id}: {due_at_iso}" + (f" ({note})" if note else ""),
+            kind=NudgeKind.DEADLINE_REQUESTED.value,
+        )
+        created.append(reminders_service.serialize_reminder(reminder))
+
+    return {"order_id": order_id, "due_at": due_at_iso, "reminders": created}
+
+
+def set_reminder(
+    *,
+    session: Session,
+    principal: Principal,
+    subject: str,
+    due_at: str | None = None,
+    in_seconds: int | None = None,
+    note: str = "",
+    for_principal_id: str | None = None,
+    **_: Any,
+) -> dict[str, Any]:
+    """General-purpose reminder, defaults to reminding the caller. Team-only:
+    a CLIENT can request a deadline (request_deadline) but not set arbitrary
+    reminders for themselves or anyone else."""
+    from cerebro.db.models import ReminderKind
+    from cerebro.services import reminders as reminders_service
+
+    target_id = for_principal_id or principal.id
+    if target_id != principal.id:
+        target = session.query(Principal).filter(Principal.id == target_id).first()
+        if target is None or target.org_id != principal.org_id:
+            return {"error": "principal_not_found", "principal_id": target_id}
+
+    try:
+        parsed_due_at = _resolve_due_at(due_at, in_seconds)
+    except ValueError as exc:
+        return {"error": "invalid_due_at_or_in_seconds", "detail": str(exc)}
+
+    reminder = reminders_service.create_reminder(
+        session,
+        org_id=principal.org_id,
+        created_by_principal_id=principal.id,
+        principal_id=target_id,
+        subject=subject,
+        due_at=parsed_due_at,
+        kind=ReminderKind.GENERAL,
+        note=note,
+    )
+    return reminders_service.serialize_reminder(reminder)
+
+
+def list_reminders(
+    *,
+    session: Session,
+    principal: Principal,
+    mine_only: bool = True,
+    **_: Any,
+) -> dict[str, Any]:
+    """List pending reminders/deadlines, soonest due first. Team-only."""
+    from cerebro.services import reminders as reminders_service
+
+    rows = reminders_service.list_reminders(
+        session,
+        org_id=principal.org_id,
+        principal_id=principal.id if mine_only else None,
+    )
+    return {"items": [reminders_service.serialize_reminder(r) for r in rows]}
+
+
+def cancel_reminder(
+    *,
+    session: Session,
+    principal: Principal,
+    reminder_id: str,
+    **_: Any,
+) -> dict[str, Any]:
+    """Cancel a pending reminder/deadline. Team-only."""
+    from cerebro.services import reminders as reminders_service
+
+    cancelled = reminders_service.cancel_reminder(
+        session, org_id=principal.org_id, reminder_id=reminder_id
+    )
+    if cancelled is None:
+        return {"error": "reminder_not_found_or_not_pending", "reminder_id": reminder_id}
+    return reminders_service.serialize_reminder(cancelled)
+
+
+def calendar_view(
+    *,
+    session: Session,
+    principal: Principal,
+    days_ahead: int = 7,
+    **_: Any,
+) -> dict[str, Any]:
+    """Merged view of the caller's upcoming meetings and reminders/deadlines
+    over the next `days_ahead` days - the "self-hosted calendar" read side.
+    Team-only."""
+    import datetime as _dt
+
+    from cerebro.services import reminders as reminders_service
+
+    now = _dt.datetime.now(_dt.UTC)
+    horizon = now + _dt.timedelta(days=days_ahead)
+
+    meetings = [
+        meetings_service.serialize_meeting(m)
+        for m in meetings_service.list_meetings(session, principal_id=principal.id)
+        if m.starts_at <= horizon.replace(tzinfo=None)
+    ]
+    reminders = [
+        reminders_service.serialize_reminder(r)
+        for r in reminders_service.list_reminders(
+            session, org_id=principal.org_id, principal_id=principal.id
+        )
+        if r.due_at <= horizon.replace(tzinfo=None)
+    ]
+    return {"meetings": meetings, "reminders": reminders, "days_ahead": days_ahead}
+
+
 def request_summary(
     *,
     session: Session,
@@ -1220,6 +1422,128 @@ TOOLS: dict[str, ToolSpec] = {
         },
         handler=cancel_meeting,
         allowed_populations=_ALL_POPULATIONS,
+    ),
+    "request_deadline": ToolSpec(
+        name="request_deadline",
+        description=(
+            "Flag a deadline the team should hit for an order. Targets the "
+            "order's assignee, or every org lead if unassigned. Give either "
+            "in_seconds or due_at, not both."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "order_id": {"type": "string"},
+                "in_seconds": {
+                    "type": "integer",
+                    "description": (
+                        "Preferred for a short relative offset ('in 30 seconds', "
+                        "'in 10 minutes' -> 600). Computed from the real clock at "
+                        "the moment the tool runs, so it can't drift the way your "
+                        "own arithmetic plus response latency can."
+                    ),
+                },
+                "due_at": {
+                    "type": "string",
+                    "description": (
+                        "ISO 8601 timestamp, for an actual absolute date/time "
+                        "('tomorrow at 3pm', 'next Friday') rather than a short "
+                        "relative offset - use in_seconds for those instead. "
+                        "Compute this from the current time given in your system "
+                        "context - do not ask the user for it."
+                    ),
+                },
+                "note": {"type": "string"},
+            },
+            "required": ["order_id"],
+            "additionalProperties": False,
+        },
+        handler=request_deadline,
+        # The one reminder-system tool CLIENT gets, alongside the automatic
+        # data-followup reminders gap_chase already sends.
+        allowed_populations=_ALL_POPULATIONS,
+    ),
+    "set_reminder": ToolSpec(
+        name="set_reminder",
+        description=(
+            "Set a general-purpose reminder for yourself or a teammate. Give "
+            "either in_seconds or due_at, not both."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "subject": {"type": "string"},
+                "in_seconds": {
+                    "type": "integer",
+                    "description": (
+                        "Preferred for a short relative offset ('in 30 seconds', "
+                        "'in 10 minutes' -> 600). Computed from the real clock at "
+                        "the moment the tool runs, so it can't drift the way your "
+                        "own arithmetic plus response latency can."
+                    ),
+                },
+                "due_at": {
+                    "type": "string",
+                    "description": (
+                        "ISO 8601 timestamp, for an actual absolute date/time "
+                        "('tomorrow at 3pm', 'next Friday') rather than a short "
+                        "relative offset - use in_seconds for those instead. "
+                        "Compute this from the current time given in your system "
+                        "context - do not ask the user for it."
+                    ),
+                },
+                "note": {"type": "string"},
+                "for_principal_id": {
+                    "type": "string",
+                    "description": "Defaults to the caller if omitted.",
+                },
+            },
+            "required": ["subject"],
+            "additionalProperties": False,
+        },
+        handler=set_reminder,
+        allowed_populations=_TEAM_POPULATIONS,
+    ),
+    "list_reminders": ToolSpec(
+        name="list_reminders",
+        description="List pending reminders/deadlines, soonest due first.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "mine_only": {"type": "boolean", "description": "Default true."},
+            },
+            "additionalProperties": False,
+        },
+        handler=list_reminders,
+        allowed_populations=_TEAM_POPULATIONS,
+    ),
+    "cancel_reminder": ToolSpec(
+        name="cancel_reminder",
+        description="Cancel a pending reminder or deadline.",
+        parameters={
+            "type": "object",
+            "properties": {"reminder_id": {"type": "string"}},
+            "required": ["reminder_id"],
+            "additionalProperties": False,
+        },
+        handler=cancel_reminder,
+        allowed_populations=_TEAM_POPULATIONS,
+    ),
+    "calendar_view": ToolSpec(
+        name="calendar_view",
+        description=(
+            "Self-hosted calendar: merged view of your upcoming meetings "
+            "and reminders/deadlines over the next N days."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "days_ahead": {"type": "integer", "description": "Default 7."},
+            },
+            "additionalProperties": False,
+        },
+        handler=calendar_view,
+        allowed_populations=_TEAM_POPULATIONS,
     ),
     "request_summary": ToolSpec(
         name="request_summary",

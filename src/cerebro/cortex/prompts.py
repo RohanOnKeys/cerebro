@@ -3,12 +3,31 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Literal
 
 from cerebro.db.models import Population
 from cerebro.registry import TOOLS, TOOLS_FOR
 
 ToolMode = Literal["native", "json"]
+
+
+def time_context(*, now: datetime | None = None) -> str:
+    """Current time, so the model can resolve relative language ('in 30
+    seconds', 'tomorrow at 3pm', 'next Friday') into an absolute ISO 8601
+    timestamp itself. Tools like set_reminder/request_deadline/
+    schedule_meeting take an explicit due_at/starts_at, and without this
+    nothing anywhere in the prompt ever told the model what time it is -
+    it had no way to compute a relative offset and would ask the user to
+    do the ISO math themselves instead."""
+    moment = now or datetime.now(UTC)
+    return (
+        f"Current time: {moment.strftime('%Y-%m-%dT%H:%M:%SZ')} (UTC). "
+        "When a tool takes an ISO 8601 timestamp and the user gave a relative "
+        "or approximate time, compute the absolute timestamp yourself from the "
+        "current time above and call the tool directly - never ask the user to "
+        "supply or calculate an ISO timestamp themselves."
+    )
 
 _BEHAVIOR: dict[Population, str] = {
     Population.CLIENT: (
@@ -138,10 +157,16 @@ def json_tool_mode_prompt(population: Population) -> str:
 
 
 def assemble_system_prompt(
-    population: Population, *, tool_mode: ToolMode = "native"
+    population: Population,
+    *,
+    tool_mode: ToolMode = "native",
+    now: datetime | None = None,
 ) -> str:
     """Assemble the full system prompt for a population and tool mode."""
-    prompt = f"{behavior_prompt(population)}\n\n{policy_prompt(population)}\n\n{GUARDRAILS}"
+    prompt = (
+        f"{behavior_prompt(population)}\n\n{time_context(now=now)}\n\n"
+        f"{policy_prompt(population)}\n\n{GUARDRAILS}"
+    )
     if tool_mode == "json":
         return f"{prompt}\n\n{json_tool_mode_prompt(population)}"
     return prompt
