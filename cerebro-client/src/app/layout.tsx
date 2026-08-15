@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { Archivo, Work_Sans } from "next/font/google";
+import { Unica_One, Work_Sans } from "next/font/google";
 import "./globals.css";
 
-const archivo = Archivo({
+const unicaOne = Unica_One({
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  variable: "--font-archivo",
+  weight: ["400"],
+  variable: "--font-unica",
   display: "swap",
 });
 
@@ -17,13 +17,13 @@ const workSans = Work_Sans({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3001"),
   title: {
-    default: "Cerebro — Team dashboard",
+    default: "Cerebro — Agency Orchestration",
     template: "%s — Cerebro",
   },
   description:
-    "The internal admin console for the team running Cerebro: live channel status, projects, members and roles, meetings, CI runs, and the audit ledger.",
+    "Cerebro is your direct line to the team: reach us on Telegram or email, get meetings scheduled, requests assigned, and questions answered, with every sender verified.",
 };
 
 export default function RootLayout({
@@ -32,7 +32,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${archivo.variable} ${workSans.variable}`}>
+    <html lang="en" className={`${unicaOne.variable} ${workSans.variable}`}>
       <body className="font-sans">{children}</body>
     </html>
   );

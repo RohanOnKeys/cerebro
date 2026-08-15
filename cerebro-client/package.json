@@ -1,20 +1,19 @@
 {
-  "name": "cerebro-web",
+  "name": "cerebro-client",
   "version": "0.1.0",
   "private": true,
-  "description": "Cerebro team dashboard, the internal admin console (channel status, projects, members, meetings, CI runs, ledger). Standalone Next.js app, deployed separately from cerebro-client (the marketing/landing site) and the Python agent core.",
+  "description": "Cerebro client-facing marketing/landing site. Static, no backend of its own — its only job is pointing a client at Telegram or email to reach Cerebro. Deployed separately from cerebro-web (the team dashboard) and the Python agent core.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3001",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3001",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "next": "14.2.35",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "server-only": "^0.0.1"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/node": "^20.16.11",
