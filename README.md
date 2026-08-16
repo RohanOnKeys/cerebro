@@ -53,7 +53,7 @@ Cerebro used to answer questions. Now it closes the loop on its own, and the new
 
 ## How it works
 
-Every tool, table, and background job Cerebro actually runs — channel intake, identity, the tool-calling loop, tier gating, services, Postgres, the scheduler, CI, and the two dashboards — is documented in **[`architecture.md`](architecture.md)**.
+Every tool, table, and background job Cerebro actually runs, channel intake, identity, the tool-calling loop, tier gating, services, Postgres, the scheduler, CI, and the two dashboards, is documented in **[`architecture.md`](architecture.md)**.
 
 ---
 
