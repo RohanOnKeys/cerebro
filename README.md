@@ -12,7 +12,11 @@ You do not open a new app. You do not learn a new interface. You message Cerebro
 
 **because the only time one should be enclosed in a box, is when they are dead**
 
+<div align="center">
+  
 ![Anywhere](assets/anywhere.jpg)
+
+</div>
 
 ---
 
@@ -41,7 +45,11 @@ Cerebro used to answer questions. Now it closes the loop on its own, and the new
 
 **Assignment that reasons about capacity, not just availability.** A task is offered to a team designation first, then filtered to whoever has the required skills, then filtered again to whoever is under their work in progress cap, and finally handed to whichever remaining person is carrying the least right now. The same chain runs whether the order came in on Telegram at nine in the morning or Discord at midnight.
 
+<div align="center">
+
 ![Work anywhere](assets/dark-laptop.jpg)
+
+</div>
 
 **Meetings that produce a real, working link.** Ask for a call with a client and Cerebro checks the calendar, proposes the earliest slot that actually works, and, if you want a Zoom room, creates one for real through the Zoom API and hands back a link a person can click. Nothing about scheduling depends on Google. The meeting itself lives in Cerebro's own calendar, so a slot check never depends on an external account being configured correctly.
 
@@ -79,7 +87,11 @@ Every capability above is a plain callable in `registry.py`, gated by population
 
 **Postgres**, one database, holds every ledger: principals, orders, tasks, meetings, reminders, CI runs, and the audited crossings between teams.
 
+<div align="center">
+
 ![Ledgers](assets/ledger-stream.jpg)
+
+</div>
 
 **Jira Cloud's REST API** is where tickets actually live, raised automatically and readable on demand.
 
@@ -87,7 +99,11 @@ Every capability above is a plain callable in `registry.py`, gated by population
 
 **GitHub's REST API and webhooks** handle a dispatched workflow going out and its result coming back.
 
+<div align="center">
+
 ![CI](assets/ci-wake-up.jpg)
+
+</div>
 
 **The dashboard** is its own server, reaching the core through an admin, read only API over HTTPS.
 
