@@ -1,6 +1,6 @@
 # CEREBRO
 
-### The company second brain.
+### Agency Orchestration.
 
 ![Cerebro](assets/cerebro-hero.gif)
 
