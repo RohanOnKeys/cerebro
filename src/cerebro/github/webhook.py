@@ -101,8 +101,10 @@ def handle_ci_event(
     """Upsert run, triage failures, enforce flake budget, block linked tasks."""
     from cerebro.github import triage as triage_mod
     from cerebro.github.runs import upsert_from_github
+    from cerebro.services.orgs import resolve_active_org
 
-    org_id = settings.github_default_org_id
+    active_org = resolve_active_org(session)
+    org_id = active_org.id if active_org is not None else settings.github_default_org_id
     row = upsert_from_github(
         session,
         org_id=org_id,

@@ -62,6 +62,7 @@ from cerebro.db.models import (
 )
 from cerebro.db.session import get_session
 from cerebro.registry import TOOLS
+from cerebro.services import orgs as orgs_service
 from cerebro.verify.role_claims import (
     RoleClaimRejected,
     approve_role_claim_as_admin,
@@ -128,20 +129,8 @@ def _get_org(session: Session) -> Org:
     """This admin API has always assumed a single org (see module
     docstring — /admin/members, /admin/ledger, etc. never filter by
     org_id either), so "the org" is whichever one is actually live in the
-    channels right now: the org behind the most recent Message. Falls back
-    to the most recently created org (e.g. right after `create_team`/a
-    join-code enrollment, before anyone has sent a message yet). Picking
-    the literal first-ever-created org here previously meant the Settings
-    page stayed pinned to old test data forever once a second org existed."""
-    latest_active_org_id = session.scalar(
-        select(Message.org_id).order_by(Message.created_at.desc()).limit(1)
-    )
-    if latest_active_org_id is not None:
-        org = session.get(Org, latest_active_org_id)
-        if org is not None:
-            return org
-
-    org = session.query(Org).order_by(Org.created_at.desc()).first()
+    channels right now - see services.orgs.resolve_active_org."""
+    org = orgs_service.resolve_active_org(session)
     if org is None:
         raise HTTPException(
             status_code=404,

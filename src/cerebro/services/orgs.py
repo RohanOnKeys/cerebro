@@ -15,9 +15,10 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from cerebro.db.models import Org
+from cerebro.db.models import Message, Org
 
 # Excludes 0/O and 1/I so a code read aloud or typed on a phone keyboard
 # doesn't collide on ambiguous characters.
@@ -50,3 +51,26 @@ def resolve_or_create_org_by_code(session: Session, code: str) -> tuple[Org, boo
     session.add(org)
     session.commit()
     return org, True
+
+
+def resolve_active_org(session: Session) -> Org | None:
+    """The org actually live in the channels right now: the org behind the
+    most recent Message, falling back to the most recently created org.
+    Returns None only if no org exists at all yet.
+
+    This exists because both the admin dashboard and the GitHub webhook
+    handler used to assume a single, hardcoded org (the dashboard read the
+    literal first-ever-created row; the webhook read a GITHUB_DEFAULT_ORG_ID
+    config default of "default_org"). Once real orgs get created through the
+    join-code enrollment flow, neither assumption holds - the webhook path
+    started throwing a ForeignKeyViolation on every event because no org
+    named "default_org" actually existed in the database."""
+    latest_active_org_id = session.scalar(
+        select(Message.org_id).order_by(Message.created_at.desc()).limit(1)
+    )
+    if latest_active_org_id is not None:
+        org = session.get(Org, latest_active_org_id)
+        if org is not None:
+            return org
+
+    return session.query(Org).order_by(Org.created_at.desc()).first()

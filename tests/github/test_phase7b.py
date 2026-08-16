@@ -32,6 +32,7 @@ from cerebro.github.triage import (
 )
 from cerebro.github.webhook import (
     CIEvent,
+    handle_ci_event,
     normalize_workflow_run,
     parse_task_number_from_branch,
     verify_signature,
@@ -224,6 +225,22 @@ def test_link_task_and_block_on_red(db_session, principal):
     task = db_session.query(Task).filter(Task.id == "task_12").one()
     assert task.status == TaskStatus.BLOCKED.value
     assert "CI red" in (task.blocked_reason or "")
+
+
+def test_handle_ci_event_resolves_the_real_org_not_a_hardcoded_default(db_session, monkeypatch):
+    """The bug this fixes: handle_ci_event used to hardcode
+    settings.github_default_org_id ("default_org"), which threw a
+    ForeignKeyViolation the moment a real deployment had actual orgs (created
+    via the join-code enrollment flow) and none of them was literally named
+    "default_org". It must resolve the real active org instead."""
+    monkeypatch.setattr("cerebro.config.settings.github_default_org_id", "default_org")
+    assert db_session.query(Org).filter(Org.id == "default_org").first() is None
+
+    result = handle_ci_event(db_session, _event(run_id="99", conclusion="success"))
+
+    ci_run = db_session.query(CiRun).filter(CiRun.github_run_id == "99").one()
+    assert ci_run.org_id == "org_1"
+    assert result["ci_run_id"] == ci_run.id
 
 
 def test_t2_tools_gated_and_handlers(db_session, principal):
