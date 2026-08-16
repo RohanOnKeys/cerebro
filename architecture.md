@@ -1,116 +1,16 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cerebro Architecture</title>
-<script type="module">
-    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    mermaid.initialize({ startOnLoad: true, theme: prefersDark ? 'dark' : 'default' });
-</script>
-<style>
-  :root {
-    --bg: #eef1f5;
-    --card: #ffffff;
-    --border: #d7dee6;
-    --text: #182430;
-    --text-muted: #5b6b78;
-    --accent: #20568c;
-  }
+# Cerebro Architecture
 
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #1a1d21;
-      --card: #232629;
-      --border: #33383d;
-      --text: #f2f4f6;
-      --text-muted: #9aa4ac;
-      --accent: #5b93c9;
-    }
-  }
+Every tool, table, and background job Cerebro actually runs — from the four inbound channels, through ingress, cortex, the full 35-tool registry, tier gating, services, Postgres, and the seven scheduled jobs that carry state back out again.
 
-  :root[data-theme="dark"] {
-    --bg: #1a1d21;
-    --card: #232629;
-    --border: #33383d;
-    --text: #f2f4f6;
-    --text-muted: #9aa4ac;
-    --accent: #5b93c9;
-  }
+Renders natively on GitHub. For the interactive/print versions see [`architecture.html`](architecture.html) and [`architecture.pdf`](architecture.pdf) in this same directory.
 
-  * { box-sizing: border-box; }
-
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 3rem 1.5rem 4rem;
-  }
-
-  h1 {
-    font-size: 1.4rem;
-    font-weight: 700;
-    margin: 0 0 0.3rem;
-    letter-spacing: -0.01em;
-  }
-
-  p.sub {
-    color: var(--text-muted);
-    margin: 0 0 2rem;
-    font-size: 0.95rem;
-    text-align: center;
-    max-width: 62ch;
-  }
-
-  .diagram-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 2rem;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
-    align-self: stretch;
-    width: 100%;
-    max-width: 1700px;
-    margin: 0 auto;
-    overflow-x: auto;
-  }
-
-  .mermaid { display: block; width: 100%; }
-
-  .mermaid svg {
-    width: 100% !important;
-    height: auto !important;
-    min-width: 1400px;
-    max-width: none !important;
-    display: block;
-  }
-
-  @media print {
-    @page { size: 22in 11in; margin: 0.4in; }
-    body { padding: 0; }
-    .diagram-card { box-shadow: none; max-width: none; }
-    .mermaid svg { min-width: 0; }
-  }
-</style>
-</head>
-<body>
-
-<h1>Cerebro Architecture</h1>
-<p class="sub">Every tool, table, and background job Cerebro actually runs &mdash; from the four inbound channels, through ingress, cortex, the full 35-tool registry, tier gating, services, Postgres, and the seven scheduled jobs that carry state back out again.</p>
-
-<div class="diagram-card">
-<pre class="mermaid">
+```mermaid
 flowchart TB
 
     %% ==============================
     %% Inbound channels
     %% ==============================
-    subgraph Channels["Communication Channels &middot; Inbound"]
+    subgraph Channels["Communication Channels · Inbound"]
         direction LR
         SLACK[Slack]
         DISCORD[Discord]
@@ -128,8 +28,8 @@ flowchart TB
         direction LR
         DEDUPE[Dedupe]
         PRINC[Resolve Principal]
-        ENROLL1["Stage 1 &middot; Team Code Prompt"]
-        ENROLL2["Stage 2 &middot; Population Default<br/>OPS self-serve &middot; DEV / LEAD / ADMIN need peer sign-off"]
+        ENROLL1["Stage 1 · Team Code Prompt"]
+        ENROLL2["Stage 2 · Population Default<br/>OPS self-serve · DEV / LEAD / ADMIN need peer sign-off"]
         CMD[Command Parser]
     end
     GATEWAY --> DEDUPE
@@ -141,7 +41,7 @@ flowchart TB
     subgraph Cortex["Cortex Decision Loop"]
         direction LR
         PROMPT["Build Prompt<br/>cortex/prompts.py"]
-        FEATHER["Featherless Client<br/>Qwen / Llama &middot; OpenAI-compatible"]
+        FEATHER["Featherless Client<br/>Qwen / Llama · OpenAI-compatible"]
         LOOP["Tool-Calling Loop<br/>cortex/loop.py"]
         GATE["tools_for(population)<br/>population-gated set"]
     end
@@ -150,10 +50,10 @@ flowchart TB
     %% ==============================
     %% Tool Registry - full 35 tools
     %% ==============================
-    subgraph Registry["Tool Registry &middot; 35 tools"]
+    subgraph Registry["Tool Registry · 35 tools"]
         direction TB
 
-        subgraph Identity["Identity &amp; Onboarding"]
+        subgraph Identity["Identity & Onboarding"]
             direction LR
             WHOAMI[whoami]
             ENROLLP[enroll_principal]
@@ -204,7 +104,7 @@ flowchart TB
             SUBS[submit_summary]
         end
 
-        subgraph RelayT["Relay &amp; Incidents"]
+        subgraph RelayT["Relay & Incidents"]
             direction LR
             RELAY[relay_to_population]
             FEEDBACK[route_client_feedback]
@@ -233,7 +133,7 @@ flowchart TB
         direction LR
         T1["Tier 1<br/>runs immediately"]
 
-        subgraph T2Group["Tier 2 &middot; CONFIRM Challenge"]
+        subgraph T2Group["Tier 2 · CONFIRM Challenge"]
             direction LR
             NONCE["Mint Nonce<br/>unambiguous alphabet"]
             PRED1["Predicate: alphabet ok"]
@@ -252,7 +152,7 @@ flowchart TB
     subgraph Services["Service Layer"]
         direction LR
         ORDERSVC[Orders Ledger]
-        TASKSVC["Task Ladder<br/>designation -&gt; skills -&gt; wip_cap -&gt; load"]
+        TASKSVC["Task Ladder<br/>designation -> skills -> wip_cap -> load"]
         MEETSVC[Meetings]
         REMSVC["Reminders + Deadlines"]
         SUMSVC["Summary Fan-in / Fan-out"]
@@ -264,7 +164,7 @@ flowchart TB
     %% ==============================
     subgraph MembraneDetail["Membrane Crossing Pipeline"]
         direction LR
-        EVAL["Evaluate Policy<br/>source -&gt; target"]
+        EVAL["Evaluate Policy<br/>source -> target"]
         RECORD["Record Crossing<br/>audit-first"]
         REDACT["Redact Digest Text"]
         MARK["Mark Crossing Sent"]
@@ -285,7 +185,7 @@ flowchart TB
     %% ==============================
     %% Database - individual tables
     %% ==============================
-    subgraph DB["PostgreSQL &middot; SQLAlchemy models"]
+    subgraph DB["PostgreSQL · SQLAlchemy models"]
         direction LR
         PRINCIPALSDB[(Principals)]
         ORGSDB[(Orgs)]
@@ -318,7 +218,7 @@ flowchart TB
     %% ==============================
     %% Background scheduler - all 7 jobs
     %% ==============================
-    subgraph Scheduler["Background Scheduler &middot; 5s ticks"]
+    subgraph Scheduler["Background Scheduler · 5s ticks"]
         direction LR
         GAPCHASE[Gap Chase]
         LADDER[Task Ladder Escalation]
@@ -349,7 +249,7 @@ flowchart TB
     %% ==============================
     subgraph OutboundDelivery["Outbound Delivery"]
         direction LR
-        DELIVER["Nudges, reminders &amp; notifications<br/>delivered back through the same<br/>Slack / Discord / Telegram / Mail channel"]
+        DELIVER["Nudges, reminders & notifications<br/>delivered back through the same<br/>Slack / Discord / Telegram / Mail channel"]
     end
 
     %% ==============================
@@ -444,8 +344,4 @@ flowchart TB
     PERSIST -- notify assignee --> DELIVER
     GATEWAY -. immediate reply .-> Channels
     DELIVER -. delivered via Gateway .-> Channels
-</pre>
-</div>
-
-</body>
-</html>
+```
