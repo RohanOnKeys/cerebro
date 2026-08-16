@@ -67,10 +67,15 @@ dev = [
 ]
 
 [tool.poetry]
-# Poetry 2.x builds fine from [project] alone (PEP 621 mode), but Nixpacks'
-# Poetry provider only recognizes a project as Poetry-managed when this
-# table is literally present — without it, Railway's build falls back to a
-# plain pip install and fails generating metadata for the local package.
+# Poetry 2.x builds fine from [project] alone (PEP 621 mode) and poetry-core
+# reads name/version/description/authors from [project] as authoritative —
+# but Nixpacks' Poetry provider still validates against the legacy 1.x
+# schema, which requires these duplicated directly under [tool.poetry] too.
+# Keep both in sync; poetry-core itself ignores these when [project] is set.
+name = "cerebro"
+version = "0.1.0"
+description = "The company second brain"
+authors = ["Rohan <rohanpxquantum@gmail.com>", "Shreya Mishra <shreyamishra2k05@gmail.com>"]
 packages = [{ include = "cerebro", from = "src" }]
 
 [tool.ruff]
