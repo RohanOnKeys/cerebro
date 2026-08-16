@@ -1,0 +1,11 @@
+.git
+venv
+dist
+cerebro-web
+cerebro-client
+node_modules
+__pycache__
+*.pyc
+.pytest_cache
+.env
+.env.local
