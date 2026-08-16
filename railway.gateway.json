@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "poetry run cerebro-gateway",
+    "startCommand": "cerebro-gateway",
     "restartPolicyType": "ALWAYS",
     "sleepApplication": false
   }
