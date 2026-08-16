@@ -56,10 +56,18 @@ def healthz() -> dict[str, str]:
 
 
 def run_server() -> None:
-    """Run the app under uvicorn (entrypoint: `cerebro-webhook`)."""
+    """Run the app under uvicorn (entrypoint: `cerebro-webhook`).
+
+    Reads PORT from the environment because PaaS hosts (Railway, Render, …)
+    assign a dynamic port and proxy to whatever the app actually binds —
+    hardcoding 8000 would make the public domain unreachable.
+    """
+    import os
+
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
