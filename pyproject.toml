@@ -66,6 +66,13 @@ dev = [
     "pre-commit>=3.3",
 ]
 
+[tool.poetry]
+# Poetry 2.x builds fine from [project] alone (PEP 621 mode), but Nixpacks'
+# Poetry provider only recognizes a project as Poetry-managed when this
+# table is literally present — without it, Railway's build falls back to a
+# plain pip install and fails generating metadata for the local package.
+packages = [{ include = "cerebro", from = "src" }]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
