@@ -2,7 +2,7 @@
 
 ### The company second brain.
 
-![Work anywhere](assets/dark-laptop.jpg)
+![Cerebro](assets/cerebro-hero.gif)
 
 Cerebro is an office workspace assistant, a project manager, and a CI monitor, running as one identity across every channel your company already lives in. It does not just answer questions. It opens the ticket, finds the right person for the work, books the meeting on a real calendar, and chases the reply that never came.
 
@@ -38,6 +38,8 @@ Cerebro used to answer questions. Now it closes the loop on its own, and the new
 **A ticket raises itself.** The moment a client opens a request on any channel, a background pass reads the order, works out which team it belongs to, splits it into real tasks, assigns each one to somebody who can actually do it, and opens a Jira ticket with the original ask as its description. Nobody has to remember to write the ticket. It already exists by the time a human looks up.
 
 **Assignment that reasons about capacity, not just availability.** A task is offered to a team designation first, then filtered to whoever has the required skills, then filtered again to whoever is under their work in progress cap, and finally handed to whichever remaining person is carrying the least right now. The same chain runs whether the order came in on Telegram at nine in the morning or Discord at midnight.
+
+![Work anywhere](assets/dark-laptop.jpg)
 
 **Meetings that produce a real, working link.** Ask for a call with a client and Cerebro checks the calendar, proposes the earliest slot that actually works, and, if you want a Zoom room, creates one for real through the Zoom API and hands back a link a person can click. Nothing about scheduling depends on Google. The meeting itself lives in Cerebro's own calendar, so a slot check never depends on an external account being configured correctly.
 
