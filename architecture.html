@@ -77,7 +77,14 @@
     overflow-x: auto;
   }
 
-  .mermaid { display: flex; justify-content: center; }
+  .mermaid { display: block; }
+
+  .mermaid svg {
+    width: 100% !important;
+    height: auto !important;
+    max-width: none !important;
+    display: block;
+  }
 </style>
 </head>
 <body>
@@ -87,13 +94,13 @@
 
 <div class="diagram-card">
 <pre class="mermaid">
-flowchart LR
+flowchart TB
 
     %% ==============================
     %% Inbound channels
     %% ==============================
-    subgraph Channels["Communication Channels"]
-        direction TB
+    subgraph Channels["Communication Channels &middot; Inbound"]
+        direction LR
         SLACK[Slack]
         DISCORD[Discord]
         TELEGRAM[Telegram]
@@ -101,31 +108,33 @@ flowchart LR
     end
 
     GATEWAY["Caspian SDK Gateway<br/>single on_message handler"]
+    Channels --> GATEWAY
 
     %% ==============================
     %% Ingress
     %% ==============================
     subgraph Ingress["Ingress Layer"]
-        direction TB
+        direction LR
         DEDUPE[Dedupe]
         PRINC[Resolve Principal]
         ENROLL1["Stage 1 &middot; Team Code Prompt"]
         ENROLL2["Stage 2 &middot; Population Default<br/>OPS self-serve &middot; DEV / LEAD / ADMIN need peer sign-off"]
         CMD[Command Parser]
     end
+    GATEWAY --> DEDUPE
     DEDUPE --> PRINC --> ENROLL1 --> ENROLL2 --> CMD
 
     %% ==============================
     %% Cortex
     %% ==============================
     subgraph Cortex["Cortex Decision Loop"]
-        direction TB
+        direction LR
         PROMPT["Build Prompt<br/>cortex/prompts.py"]
         FEATHER["Featherless Client<br/>Qwen / Llama &middot; OpenAI-compatible"]
         LOOP["Tool-Calling Loop<br/>cortex/loop.py"]
         GATE["tools_for(population)<br/>population-gated set"]
     end
-    PROMPT --> FEATHER --> LOOP --> GATE
+    CMD --> PROMPT --> FEATHER --> LOOP --> GATE
 
     %% ==============================
     %% Tool Registry - full 35 tools
@@ -210,11 +219,11 @@ flowchart LR
     %% Tier executor, expanded with predicates
     %% ==============================
     subgraph Tier["Tier Executor"]
-        direction TB
+        direction LR
         T1["Tier 1<br/>runs immediately"]
 
         subgraph T2Group["Tier 2 &middot; CONFIRM Challenge"]
-            direction TB
+            direction LR
             NONCE["Mint Nonce<br/>unambiguous alphabet"]
             PRED1["Predicate: alphabet ok"]
             PRED2["Predicate: approval exists"]
@@ -255,7 +264,7 @@ flowchart LR
     %% External integrations
     %% ==============================
     subgraph External["External Integrations"]
-        direction TB
+        direction LR
         GCAL["Google Calendar / Meet<br/>service-account auth"]
         ZOOM["Zoom<br/>server-to-server OAuth"]
         GITHUB["GitHub App<br/>installation auth"]
@@ -266,7 +275,7 @@ flowchart LR
     %% Database - individual tables
     %% ==============================
     subgraph DB["PostgreSQL &middot; SQLAlchemy models"]
-        direction TB
+        direction LR
         PRINCIPALSDB[(Principals)]
         ORGSDB[(Orgs)]
         BINDINGSDB[(Channel Bindings)]
@@ -299,7 +308,7 @@ flowchart LR
     %% Background scheduler - all 7 jobs
     %% ==============================
     subgraph Scheduler["Background Scheduler &middot; 5s ticks"]
-        direction TB
+        direction LR
         GAPCHASE[Gap Chase]
         LADDER[Task Ladder Escalation]
         MREM["Meeting Reminders<br/>24h / 60m / 10m"]
@@ -313,7 +322,7 @@ flowchart LR
     %% Frontend apps
     %% ==============================
     subgraph Dashboard["Frontend Apps"]
-        direction TB
+        direction LR
         ADMIN["FastAPI Admin API<br/>admin/router.py + auth"]
         NEXT["cerebro-web<br/>Team Dashboard"]
         CLIENTAPP["cerebro-client<br/>Telegram Mini App"]
@@ -322,10 +331,19 @@ flowchart LR
     ADMIN --> CLIENTAPP
 
     %% ==============================
+    %% Outbound delivery - a distinct terminal
+    %% node, not a cycle back to Channels, so
+    %% the layout never has to route a long
+    %% edge back across the whole diagram
+    %% ==============================
+    subgraph OutboundDelivery["Outbound Delivery"]
+        direction LR
+        DELIVER["Nudges, reminders &amp; notifications<br/>delivered back through the same<br/>Slack / Discord / Telegram / Mail channel"]
+    end
+
+    %% ==============================
     %% Main spine
     %% ==============================
-    Channels --> GATEWAY --> DEDUPE
-    CMD --> PROMPT
     GATE --> Identity
     GATE --> Presence
     GATE --> OrdersT
@@ -391,22 +409,15 @@ flowchart LR
     PERSIST --> CIFAILDB
 
     %% ==============================
-    %% Webhook trigger + notify
+    %% Webhook trigger
     %% ==============================
     GITHUB -. workflow_run webhook .-> SIG
-    PERSIST -. notify assignee .-> GATEWAY
 
     %% ==============================
-    %% Scheduler reads DB, writes nudges
+    %% Scheduler reads DB
     %% ==============================
     DB --> Scheduler
-    GAPCHASE -. nudge .-> GATEWAY
-    LADDER -. escalate .-> GATEWAY
-    MREM -. reminder .-> GATEWAY
-    GREM -. due .-> GATEWAY
-    SCHASE -. chase .-> GATEWAY
-    SMERGE -. merged digest .-> GATEWAY
-    INTAKE --> TASKSVC
+    INTAKE -. auto-decompose .-> TASKSVC
 
     %% ==============================
     %% Dashboard reads DB
@@ -414,9 +425,14 @@ flowchart LR
     DB --> ADMIN
 
     %% ==============================
-    %% Feedback loop back to channels
+    %% Everything async funnels to one
+    %% outbound edge instead of looping
+    %% each source back across the diagram
     %% ==============================
-    GATEWAY -. reply .-> Channels
+    Scheduler --> DELIVER
+    PERSIST -- notify assignee --> DELIVER
+    GATEWAY -. immediate reply .-> Channels
+    DELIVER -. delivered via Gateway .-> Channels
 </pre>
 </div>
 
