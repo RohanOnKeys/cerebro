@@ -12,6 +12,8 @@ You do not open a new app. You do not learn a new interface. You message Cerebro
 
 **because the only time one should be enclosed in a box, is when they are dead**
 
+![Anywhere](assets/anywhere.jpg)
+
 ---
 
 ## Live
@@ -77,11 +79,15 @@ Every capability above is a plain callable in `registry.py`, gated by population
 
 **Postgres**, one database, holds every ledger: principals, orders, tasks, meetings, reminders, CI runs, and the audited crossings between teams.
 
+![Ledgers](assets/ledger-stream.jpg)
+
 **Jira Cloud's REST API** is where tickets actually live, raised automatically and readable on demand.
 
 **Zoom's Server to Server OAuth API** mints the real conferencing links behind a scheduled meeting.
 
 **GitHub's REST API and webhooks** handle a dispatched workflow going out and its result coming back.
+
+![CI](assets/ci-wake-up.jpg)
 
 **The dashboard** is its own server, reaching the core through an admin, read only API over HTTPS.
 
