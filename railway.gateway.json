@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "cerebro-gateway",
+    "startCommand": "/opt/venv/bin/cerebro-gateway",
     "restartPolicyType": "ALWAYS",
     "sleepApplication": false
   }
