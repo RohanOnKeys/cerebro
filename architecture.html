@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cerebro Architecture</title>
+<script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    mermaid.initialize({ startOnLoad: true, theme: prefersDark ? 'dark' : 'default' });
+</script>
+<style>
+  :root {
+    --bg: #eef1f5;
+    --card: #ffffff;
+    --border: #d7dee6;
+    --text: #182430;
+    --text-muted: #5b6b78;
+    --accent: #20568c;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1d21;
+      --card: #232629;
+      --border: #33383d;
+      --text: #f2f4f6;
+      --text-muted: #9aa4ac;
+      --accent: #5b93c9;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #1a1d21;
+    --card: #232629;
+    --border: #33383d;
+    --text: #f2f4f6;
+    --text-muted: #9aa4ac;
+    --accent: #5b93c9;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 3rem 1.5rem 4rem;
+  }
+
+  h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin: 0 0 0.3rem;
+    letter-spacing: -0.01em;
+  }
+
+  p.sub {
+    color: var(--text-muted);
+    margin: 0 0 2rem;
+    font-size: 0.95rem;
+    text-align: center;
+    max-width: 62ch;
+  }
+
+  .diagram-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 2rem;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    align-self: stretch;
+    width: 100%;
+    max-width: 1700px;
+    margin: 0 auto;
+    overflow-x: auto;
+  }
+
+  .mermaid { display: block; width: 100%; }
+
+  .mermaid svg {
+    width: 100% !important;
+    height: auto !important;
+    min-width: 1400px;
+    max-width: none !important;
+    display: block;
+  }
+
+  @media print {
+    @page { size: 22in 11in; margin: 0.4in; }
+    body { padding: 0; }
+    .diagram-card { box-shadow: none; max-width: none; }
+    .mermaid svg { min-width: 0; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Cerebro Architecture</h1>
+<p class="sub">Every tool, table, and background job Cerebro actually runs &mdash; from the four inbound channels, through ingress, cortex, the full 35-tool registry, tier gating, services, Postgres, and the seven scheduled jobs that carry state back out again.</p>
+
+<div class="diagram-card">
+<pre class="mermaid">
+flowchart TB
+
+    %% ==============================
+    %% Inbound channels
+    %% ==============================
+    subgraph Channels["Communication Channels &middot; Inbound"]
+        direction LR
+        SLACK[Slack]
+        DISCORD[Discord]
+        TELEGRAM[Telegram]
+        MAIL[Mail]
+    end
+
+    GATEWAY["Caspian SDK Gateway<br/>single on_message handler"]
+    Channels --> GATEWAY
+
+    %% ==============================
+    %% Ingress
+    %% ==============================
+    subgraph Ingress["Ingress Layer"]
+        direction LR
+        DEDUPE[Dedupe]
+        PRINC[Resolve Principal]
+        ENROLL1["Stage 1 &middot; Team Code Prompt"]
+        ENROLL2["Stage 2 &middot; Population Default<br/>OPS self-serve &middot; DEV / LEAD / ADMIN need peer sign-off"]
+        CMD[Command Parser]
+    end
+    GATEWAY --> DEDUPE
+    DEDUPE --> PRINC --> ENROLL1 --> ENROLL2 --> CMD
+
+    %% ==============================
+    %% Cortex
+    %% ==============================
+    subgraph Cortex["Cortex Decision Loop"]
+        direction LR
+        PROMPT["Build Prompt<br/>cortex/prompts.py"]
+        FEATHER["Featherless Client<br/>Qwen / Llama &middot; OpenAI-compatible"]
+        LOOP["Tool-Calling Loop<br/>cortex/loop.py"]
+        GATE["tools_for(population)<br/>population-gated set"]
+    end
+    CMD --> PROMPT --> FEATHER --> LOOP --> GATE
+
+    %% ==============================
+    %% Tool Registry - full 35 tools
+    %% ==============================
+    subgraph Registry["Tool Registry &middot; 35 tools"]
+        direction TB
+
+        subgraph Identity["Identity &amp; Onboarding"]
+            direction LR
+            WHOAMI[whoami]
+            ENROLLP[enroll_principal]
+            CREATETEAM[create_team]
+        end
+
+        subgraph Presence["Presence"]
+            AVAIL[set_availability]
+        end
+
+        subgraph OrdersT["Orders"]
+            direction LR
+            OPENO[open_order]
+            UPDO[update_order_fields]
+            STATO[order_status]
+            LISTO[list_orders]
+        end
+
+        subgraph TasksT["Tasks"]
+            direction LR
+            DECOMP[decompose_order]
+            ASSIGNT[assign_task]
+            ACKT[ack_task]
+            BLOCKT[block_task]
+            LISTT[list_tasks]
+        end
+
+        subgraph MeetingsT["Meetings"]
+            direction LR
+            SCHEDM[schedule_meeting]
+            RSVPM[rsvp_meeting]
+            LISTM[list_meetings]
+            STATM[meeting_status]
+            CANCELM[cancel_meeting]
+        end
+
+        subgraph RemindersT["Reminders"]
+            direction LR
+            DEADLINE[request_deadline]
+            SETR[set_reminder]
+            LISTR[list_reminders]
+            CANCELR[cancel_reminder]
+            CALVIEW[calendar_view]
+        end
+
+        subgraph SummariesT["Summaries"]
+            REQS[request_summary]
+            SUBS[submit_summary]
+        end
+
+        subgraph RelayT["Relay &amp; Incidents"]
+            direction LR
+            RELAY[relay_to_population]
+            FEEDBACK[route_client_feedback]
+            INCIDENT[post_incident_update]
+        end
+
+        subgraph CIT["GitHub CI"]
+            direction LR
+            LISTCI[list_ci_runs]
+            EXPLAIN[explain_ci_failure]
+            RERUN[rerun_workflow]
+            DISPATCH[dispatch_workflow]
+            CANCELRUN[cancel_run]
+        end
+
+        subgraph JiraT["Jira"]
+            CREATEJ[create_jira_ticket]
+            STATUSJ[jira_issue_status]
+        end
+    end
+
+    %% ==============================
+    %% Tier executor, expanded with predicates
+    %% ==============================
+    subgraph Tier["Tier Executor"]
+        direction LR
+        T1["Tier 1<br/>runs immediately"]
+
+        subgraph T2Group["Tier 2 &middot; CONFIRM Challenge"]
+            direction LR
+            NONCE["Mint Nonce<br/>unambiguous alphabet"]
+            PRED1["Predicate: alphabet ok"]
+            PRED2["Predicate: approval exists"]
+            PRED3["Predicate: same-channel confirm"]
+            PRED4["Predicate: single-bound-channel"]
+            PRED5["Predicate: correct principal"]
+            AUDIT["Write Refusal Audit"]
+        end
+        NONCE --> PRED1 --> PRED2 --> PRED3 --> PRED4 --> PRED5 --> AUDIT
+    end
+
+    %% ==============================
+    %% Services
+    %% ==============================
+    subgraph Services["Service Layer"]
+        direction LR
+        ORDERSVC[Orders Ledger]
+        TASKSVC["Task Ladder<br/>designation -&gt; skills -&gt; wip_cap -&gt; load"]
+        MEETSVC[Meetings]
+        REMSVC["Reminders + Deadlines"]
+        SUMSVC["Summary Fan-in / Fan-out"]
+        MEMSVC[Membrane Policy]
+    end
+
+    %% ==============================
+    %% Membrane detail
+    %% ==============================
+    subgraph MembraneDetail["Membrane Crossing Pipeline"]
+        direction LR
+        EVAL["Evaluate Policy<br/>source -&gt; target"]
+        RECORD["Record Crossing<br/>audit-first"]
+        REDACT["Redact Digest Text"]
+        MARK["Mark Crossing Sent"]
+    end
+    EVAL --> RECORD --> REDACT --> MARK
+
+    %% ==============================
+    %% External integrations
+    %% ==============================
+    subgraph External["External Integrations"]
+        direction LR
+        GCAL["Google Calendar / Meet<br/>service-account auth"]
+        ZOOM["Zoom<br/>server-to-server OAuth"]
+        GITHUB["GitHub App<br/>installation auth"]
+        JIRAAPI["Jira Cloud<br/>API token"]
+    end
+
+    %% ==============================
+    %% Database - individual tables
+    %% ==============================
+    subgraph DB["PostgreSQL &middot; SQLAlchemy models"]
+        direction LR
+        PRINCIPALSDB[(Principals)]
+        ORGSDB[(Orgs)]
+        BINDINGSDB[(Channel Bindings)]
+        ROLECLAIMSDB[(Role Claims)]
+        ORDERSDB[(Orders)]
+        TASKSDB[(Tasks)]
+        MEETINGSDB[(Meetings)]
+        REMINDERSDB[(Reminders)]
+        NUDGESDB[(Nudges)]
+        CIRUNSDB[(CI Runs)]
+        CIFAILDB[(CI Failures)]
+        CROSSINGSDB[(Membrane Crossings)]
+        APPROVALSDB[(Approvals)]
+    end
+
+    %% ==============================
+    %% GitHub webhook pipeline
+    %% ==============================
+    subgraph Webhook["GitHub Webhook Pipeline"]
+        direction LR
+        SIG["Verify HMAC<br/>Signature"]
+        NORM["Normalize<br/>CIEvent"]
+        MATCH["Match Task<br/>Branch"]
+        TRIAGE["Triage: slice log +<br/>fingerprint + flake budget"]
+        PERSIST["Persist CiRun /<br/>CiFailure"]
+    end
+    SIG --> NORM --> MATCH --> TRIAGE --> PERSIST
+
+    %% ==============================
+    %% Background scheduler - all 7 jobs
+    %% ==============================
+    subgraph Scheduler["Background Scheduler &middot; 5s ticks"]
+        direction LR
+        GAPCHASE[Gap Chase]
+        LADDER[Task Ladder Escalation]
+        MREM["Meeting Reminders<br/>24h / 60m / 10m"]
+        GREM[General Reminders]
+        SCHASE[Summary Chase]
+        SMERGE[Summary Merge]
+        INTAKE[Order Intake]
+    end
+
+    %% ==============================
+    %% Frontend apps
+    %% ==============================
+    subgraph Dashboard["Frontend Apps"]
+        direction LR
+        ADMIN["FastAPI Admin API<br/>admin/router.py + auth"]
+        NEXT["cerebro-web<br/>Team Dashboard"]
+        CLIENTAPP["cerebro-client<br/>Telegram Mini App"]
+    end
+    ADMIN --> NEXT
+    ADMIN --> CLIENTAPP
+
+    %% ==============================
+    %% Outbound delivery - a distinct terminal
+    %% node, not a cycle back to Channels, so
+    %% the layout never has to route a long
+    %% edge back across the whole diagram
+    %% ==============================
+    subgraph OutboundDelivery["Outbound Delivery"]
+        direction LR
+        DELIVER["Nudges, reminders &amp; notifications<br/>delivered back through the same<br/>Slack / Discord / Telegram / Mail channel"]
+    end
+
+    %% ==============================
+    %% Main spine
+    %% ==============================
+    GATE --> Identity
+    GATE --> Presence
+    GATE --> OrdersT
+    GATE --> TasksT
+    GATE --> MeetingsT
+    GATE --> RemindersT
+    GATE --> SummariesT
+    GATE --> RelayT
+    GATE --> CIT
+    GATE --> JiraT
+
+    %% ==============================
+    %% Registry -> Tier
+    %% ==============================
+    Identity --> T1
+    Presence --> T1
+    OrdersT --> T1
+    TasksT --> T1
+    MeetingsT --> T1
+    RemindersT --> T1
+    SummariesT --> T1
+    RelayT --> T1
+    LISTCI --> T1
+    EXPLAIN --> T1
+    RERUN --> NONCE
+    DISPATCH --> NONCE
+    CANCELRUN --> NONCE
+    JiraT -- create / status --> T1
+
+    %% ==============================
+    %% Tier -> Services / External
+    %% ==============================
+    T1 --> Services
+    AUDIT -- approved --> GITHUB
+    AUDIT --> APPROVALSDB
+    STATUSJ --> JIRAAPI
+    CREATEJ --> JIRAAPI
+
+    %% ==============================
+    %% Services detail
+    %% ==============================
+    MEETSVC --> GCAL
+    MEETSVC --> ZOOM
+    MEMSVC --> EVAL
+
+    %% ==============================
+    %% Services -> DB
+    %% ==============================
+    PRINC --> PRINCIPALSDB
+    CREATETEAM --> ORGSDB
+    ENROLL1 --> BINDINGSDB
+    ENROLL2 --> ROLECLAIMSDB
+    ORDERSVC --> ORDERSDB
+    TASKSVC --> TASKSDB
+    TASKSVC --> NUDGESDB
+    MEETSVC --> MEETINGSDB
+    REMSVC --> REMINDERSDB
+    REMSVC --> NUDGESDB
+    SUMSVC --> ORDERSDB
+    MARK --> CROSSINGSDB
+    RelayT --> NUDGESDB
+    PERSIST --> CIRUNSDB
+    PERSIST --> CIFAILDB
+
+    %% ==============================
+    %% Webhook trigger
+    %% ==============================
+    GITHUB -. workflow_run webhook .-> SIG
+
+    %% ==============================
+    %% Scheduler reads DB
+    %% ==============================
+    DB --> Scheduler
+    INTAKE -. auto-decompose .-> TASKSVC
+
+    %% ==============================
+    %% Dashboard reads DB
+    %% ==============================
+    DB --> ADMIN
+
+    %% ==============================
+    %% Everything async funnels to one
+    %% outbound edge instead of looping
+    %% each source back across the diagram
+    %% ==============================
+    Scheduler --> DELIVER
+    PERSIST -- notify assignee --> DELIVER
+    GATEWAY -. immediate reply .-> Channels
+    DELIVER -. delivered via Gateway .-> Channels
+</pre>
+</div>
+
+</body>
+</html>
