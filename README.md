@@ -4,13 +4,11 @@
 
 ![Cerebro](assets/cerebro-hero.gif)
 
-Cerebro is an office workspace assistant, a project manager, and a CI monitor, running as one identity across every channel your company already lives in. It does not just answer questions. It opens the ticket, finds the right person for the work, books the meeting on a real calendar, and chases the reply that never came.
+Cerebro is a multi-channel AI agent that lives on **Slack, Discord, Telegram, and Email** as one identity, functioning as an office workspace assistant, a project manager, and a CI monitor for the teams that use it. It does not just answer questions. It opens the ticket, finds the right person for the work, books the meeting, and chases the reply that never came. Privileged operations across Jira and Zoom go through two-channel verification before they run, so nothing destructive or externally visible fires off the back of a single ambiguous message.
+ 
+You do not open a new app or learn a new interface. You message Cerebro wherever you already talk to your team, and the office answers back.
 
-You do not open a new app. You do not learn a new interface. You message Cerebro on Telegram, Discord, Slack, or Email, and the office answers back.
-
-**walk out of your prison, work anywhere**
-
-**because the only time one should be enclosed in a box, is when they are dead**
+_**Walk out of your prison. Work anywhere, because the only time you should be enclosed in a box is when you are dead**_
 
 <div align="center">
   
@@ -41,21 +39,25 @@ You do not open a new app. You do not learn a new interface. You message Cerebro
 
 Cerebro used to answer questions. Now it closes the loop on its own, and the newest work is what actually makes that true.
 
-**A ticket raises itself.** The moment a client opens a request on any channel, a background pass reads the order, works out which team it belongs to, splits it into real tasks, assigns each one to somebody who can actually do it, and opens a Jira ticket with the original ask as its description. Nobody has to remember to write the ticket. It already exists by the time a human looks up.
-
-**Assignment that reasons about capacity, not just availability.** A task is offered to a team designation first, then filtered to whoever has the required skills, then filtered again to whoever is under their work in progress cap, and finally handed to whichever remaining person is carrying the least right now. The same chain runs whether the order came in on Telegram at nine in the morning or Discord at midnight.
+- **A ticket raises itself.** The moment a client opens a request on any channel, a background pass reads the order, works out which team it belongs to, splits it into real tasks, assigns each one to somebody who can actually do it, and opens a Jira ticket with the original ask as its description. Nobody has to remember to write the ticket. It already exists by the time a human looks up.
+  
+- **Assignment that reasons about capacity, not just availability.** A task is offered to a team designation first, then filtered to whoever has the required skills, then filtered again to whoever is under their work in progress cap, and finally handed to whichever remaining person is carrying the least right now. The same chain runs whether the order came in on Telegram at nine in the morning or Discord at midnight.
 
 <div align="center">
-
+  
 ![Work anywhere](assets/dark-laptop.jpg)
 
 </div>
 
-**Meetings that produce a real, working link.** Ask for a call with a client and Cerebro checks the calendar, proposes the earliest slot that actually works, and, if you want a Zoom room, creates one for real through the Zoom API and hands back a link a person can click. Nothing about scheduling depends on Google. The meeting itself lives in Cerebro's own calendar, so a slot check never depends on an external account being configured correctly.
+- **Meetings that produce a real, working link.** Ask for a call with a client and Cerebro checks the calendar, proposes the earliest slot that actually works, and, if you want a Zoom room, creates one for real through the Zoom API and hands back a link a person can click. The meeting itself lives in Cerebro's own self-hosted calendar, so a slot check never depends on an external account being configured correctly.
+  
+- **Reminders and deadlines that do not need a calendar app.** A team reminder or a client-requested deadline is a row Cerebro owns and fires on its own clock. Ask to be reminded, or ask for a deadline to be set, and it goes off exactly once, on time, on whichever channel you actually read.
+  
+- **Jira, live, both directions.** Cerebro does not only create tickets. Ask it the status of one by key and it reads straight from Jira and tells you where things stand, in the same sentence you asked in.
 
-**Reminders and deadlines that do not need a calendar app.** A team reminder or a client-requested deadline is a row Cerebro owns and fires on its own clock. Ask to be reminded, or ask for a deadline to be set, and it goes off exactly once, on time, on whichever channel you actually read.
+- **Client feedback** gets routed to whoever actually owns the task it's about, and cross-team relays let one team share a redacted digest with another without either side seeing more than it should. Every crossing is written to an audited ledger, so information moves across team boundaries without quietly eroding who is supposed to see what.
 
-**Jira, live, both directions.** Cerebro does not only create tickets. Ask it the status of one by key and it reads straight from Jira and tells you where things stand, in the same sentence you asked in.
+- Anything that reaches outside Cerebro and changes something real, rerunning a CI workflow, dispatching one, cancelling a run, goes through two-channel verification first. The action is proposed, a confirmation is required back on a bound channel from the right principal, and only then does it run.
 
 ---
 
@@ -81,11 +83,11 @@ Every capability above is a plain callable in `registry.py`, gated by population
 
 ## Frameworks and tools
 
-**Caspian SDK** is the channel layer, one `on_message` handler for Telegram, Discord, Slack, and Email alike.
+- **Caspian SDK** is the channel layer, one `on_message` handler for Telegram, Discord, Slack, and Email alike.
 
-**FastAPI plus a Featherless hosted model** is the core, routing free text to a tool call and pulling the arguments straight out of the sentence.
+- **FastAPI plus a Featherless hosted model** is the core, routing free text to a tool call and pulling the arguments straight out of the sentence.
 
-**Postgres**, one database, holds every ledger: principals, orders, tasks, meetings, reminders, CI runs, and the audited crossings between teams.
+- **Postgres**, one database, holds every ledger: principals, orders, tasks, meetings, reminders, CI runs, and the audited crossings between teams.
 
 <div align="center">
 
@@ -93,11 +95,11 @@ Every capability above is a plain callable in `registry.py`, gated by population
 
 </div>
 
-**Jira Cloud's REST API** is where tickets actually live, raised automatically and readable on demand.
+- **Jira Cloud's REST API** is where tickets actually live, raised automatically and readable on demand.
 
-**Zoom's Server to Server OAuth API** mints the real conferencing links behind a scheduled meeting.
+- **Zoom's Server to Server OAuth API** mints the real conferencing links behind a scheduled meeting.
 
-**GitHub's REST API and webhooks** handle a dispatched workflow going out and its result coming back.
+- **GitHub's REST API and webhooks** handle a dispatched workflow going out and its result coming back.
 
 <div align="center">
 
@@ -105,12 +107,14 @@ Every capability above is a plain callable in `registry.py`, gated by population
 
 </div>
 
-**The dashboard** is its own server, reaching the core through an admin, read only API over HTTPS.
+- **The dashboard** is its own server, reaching the core through an admin, read only API over HTTPS.
+- **Deployment:** the backend runs on Railway, the database is Postgres on Neon, and both frontends (the team dashboard and the client site) are deployed on Vercel.
 
 ---
 
 ## Why it helps the office
 
 The cost of coordination is never the meeting. It is everything around the meeting: finding the slot, writing the ticket nobody got to, working out who should actually own the work, chasing the reply, remembering what was decided, checking whether the thing shipped. Cerebro absorbs that layer and hands back the part of the day you actually got hired for.
-
+ 
 It works because it meets people where they already are. There is no adoption curve for a system that arrives as a message from a contact you already have.
+ 
