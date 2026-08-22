@@ -7,6 +7,7 @@ from caspian_sdk.client import Message
 
 from cerebro.clock.scheduler import Scheduler
 from cerebro.db.session import SessionLocal
+from cerebro.formatting import markdown_to_html
 from cerebro.main import on_message
 from cerebro.services.gap_chase import register_gap_chase_job
 from cerebro.services.meetings import register_meeting_reminder_job
@@ -20,7 +21,8 @@ async def handle_message(message: Message) -> None:
     """Bridge one inbound caspian message into main.on_message and reply."""
     sender = (message.sender or {}).get("address", "unknown")
     reply_text = await on_message(sender, message.channel, message.text or "")
-    message.reply(reply_text)
+    # text= plain fallback; html= renders **bold**/`code` on Telegram et al.
+    message.reply(text=reply_text, html=markdown_to_html(reply_text))
 
 
 def run_gateway() -> None:
